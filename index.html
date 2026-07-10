@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="使用瀏覽器 IndexedDB 管理個人關注的台股資料。">
+  <title>我的股票資料庫</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <p class="eyebrow">個人台股資料管理</p>
+      <h1>我的股票資料庫</h1>
+      <p class="subtitle">將關注的股票與 ETF 收藏在這個瀏覽器中</p>
+    </div>
+  </header>
+
+  <main class="container" id="app">
+    <div id="global-message" class="message" role="status" aria-live="polite" hidden></div>
+
+    <section id="home-page" class="page active" aria-labelledby="home-heading">
+      <h2 id="home-heading" class="section-title">請選擇功能</h2>
+      <div class="feature-grid">
+        <button class="feature-card" type="button" data-page="add-page">
+          <span class="feature-icon" aria-hidden="true">＋</span>
+          <span class="feature-title">新增股票</span>
+          <span class="feature-description">依股票代號查詢並加入收藏</span>
+        </button>
+        <button class="feature-card" type="button" data-page="list-page">
+          <span class="feature-icon" aria-hidden="true">▤</span>
+          <span class="feature-title">個股資料</span>
+          <span class="feature-description">查看、搜尋與管理已加入的股票</span>
+        </button>
+      </div>
+    </section>
+
+    <section id="add-page" class="page" aria-labelledby="add-heading" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">加入收藏</p>
+          <h2 id="add-heading">新增股票</h2>
+        </div>
+        <button class="button secondary" type="button" data-page="home-page">返回首頁</button>
+      </div>
+
+      <div class="panel form-panel">
+        <form id="stock-search-form" novalidate>
+          <label for="stock-code">股票代號</label>
+          <div class="input-actions">
+            <input id="stock-code" name="stockCode" type="text" inputmode="text" autocomplete="off"
+              maxlength="10" placeholder="例如：2330 或 0050" aria-describedby="stock-code-help">
+            <button class="button primary" type="submit">查詢股票</button>
+          </div>
+          <p id="stock-code-help" class="field-help">目前使用內建範例資料查詢，不代表即時市場資訊。</p>
+        </form>
+        <div id="search-message" class="message" role="status" aria-live="polite" hidden></div>
+        <div id="search-result" class="search-result" hidden></div>
+      </div>
+    </section>
+
+    <section id="list-page" class="page" aria-labelledby="list-heading" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">我的收藏</p>
+          <h2 id="list-heading">個股資料</h2>
+        </div>
+        <button class="button secondary" type="button" data-page="home-page">返回首頁</button>
+      </div>
+
+      <div class="panel">
+        <div class="toolbar">
+          <div class="search-field">
+            <label for="stock-filter">搜尋股票</label>
+            <input id="stock-filter" type="search" placeholder="輸入股票代號或名稱" autocomplete="off">
+          </div>
+          <div class="toolbar-actions">
+            <button id="reload-stocks" class="button secondary" type="button">重新載入資料</button>
+            <button id="clear-stocks" class="button danger-outline" type="button">清除全部股票</button>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">股票代號</th><th scope="col">股票名稱</th>
+                <th scope="col">本年度累積 EPS</th><th scope="col">前一年度 EPS</th>
+                <th scope="col">現金殖利率</th><th scope="col">前一交易日收盤價</th>
+                <th scope="col">最新收盤價</th><th scope="col">更新時間</th><th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody id="stock-table-body"></tbody>
+          </table>
+          <p id="empty-state" class="empty-state">尚未新增股票</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer><div class="container">資料儲存在目前瀏覽器中 · 範例數據僅供功能測試</div></footer>
+  <script src="sample-data.js" defer></script>
+  <script src="db.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
+
