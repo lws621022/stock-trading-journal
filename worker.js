@@ -3,11 +3,18 @@ const OFFICIAL_SOURCES = [
   {
     market: "上市",
     url: "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL",
+    timeout: 8000,
+    retries: 0,
+    requiredFields: ["Code", "Name", "ClosingPrice", "Change", "Date"],
     normalize: (item) => normalizeStock(item.Code, item.Name, item.ClosingPrice, item.Change, item.Date, "上市")
   },
   {
     market: "上櫃",
-    url: "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes",
+    // 使用「上櫃股票收盤行情」；daily_close_quotes 另含大量非普通股交易資料。
+    url: "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes",
+    timeout: 12000,
+    retries: 1,
+    requiredFields: ["SecuritiesCompanyCode", "CompanyName", "Close", "Change", "Date"],
     normalize: (item) => normalizeStock(item.SecuritiesCompanyCode, item.CompanyName, item.Close, item.Change, item.Date, "上櫃")
   }
 ];
@@ -47,11 +54,13 @@ async function handleStocksRequest(request, requestUrl) {
     const results = await Promise.allSettled(OFFICIAL_SOURCES.map((source) => fetchOfficialSource(source, SOURCE_CACHE_DURATION)));
     const data = [];
     const warnings = [];
+    const failedMarkets = [];
 
     results.forEach((result, index) => {
       if (result.status === "fulfilled") data.push(...result.value);
       else {
-        warnings.push(`${OFFICIAL_SOURCES[index].market}資料暫時無法取得`);
+        failedMarkets.push(OFFICIAL_SOURCES[index].market);
+        warnings.push(formatSourceWarning(OFFICIAL_SOURCES[index].market, result.reason));
         console.error(`${OFFICIAL_SOURCES[index].market}官方資料取得失敗`);
       }
     });
@@ -62,6 +71,13 @@ async function handleStocksRequest(request, requestUrl) {
     const requestedSet = new Set(requestedCodes);
     const responseData = requestedCodes.length ? data.filter((stock) => requestedSet.has(stock.stockCode)) : data;
     if (stockCode && !responseData.length) {
+      if (failedMarkets.length) {
+        return jsonResponse({
+          success: false,
+          message: `${failedMarkets.join("、")}官方資料目前無法取得，請稍後再試`,
+          warnings
+        }, 503);
+      }
       return jsonResponse({ success: false, message: "查無此股票代號" }, 404);
     }
 
@@ -90,17 +106,42 @@ async function fetchOfficialSource(source, cacheDuration) {
 }
 
 async function fetchSource(source) {
+  let lastError;
+  for (let attempt = 0; attempt <= source.retries; attempt += 1) {
+    try {
+      return await fetchSourceOnce(source);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+async function fetchSourceOnce(source) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  const timeoutId = setTimeout(() => controller.abort(), source.timeout);
   try {
     const response = await fetch(source.url, { headers: { Accept: "application/json" }, signal: controller.signal });
-    if (!response.ok) throw new Error("官方資料來源回應異常");
+    if (!response.ok) throw new SourceError(`HTTP ${response.status}`);
     const payload = await response.json();
-    if (!Array.isArray(payload)) throw new Error("官方資料格式不正確");
-    return payload.map(source.normalize).filter((stock) => stock.stockCode && stock.stockName);
+    if (!Array.isArray(payload)) throw new SourceError("回傳格式不是陣列");
+    const sample = payload.find((item) => item && typeof item === "object");
+    const missingFields = source.requiredFields.filter((field) => !sample || !(field in sample));
+    if (missingFields.length) throw new SourceError(`找不到預期欄位：${missingFields.join("、")}`);
+    const stocks = payload.map(source.normalize).filter((stock) => stock.stockCode && stock.stockName);
+    if (!stocks.length) throw new SourceError("回傳資料沒有有效股票紀錄");
+    return stocks;
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+class SourceError extends Error {}
+
+function formatSourceWarning(market, error) {
+  if (error?.name === "AbortError") return `${market}資料暫時無法取得（官方 API 請求逾時）`;
+  const reason = error instanceof SourceError ? error.message : "官方 API 連線失敗";
+  return `${market}資料暫時無法取得（${reason}）`;
 }
 
 async function enrichFinancialData(stocks, warnings, includeEps) {
@@ -219,3 +260,4 @@ function formatRocDate(value) {
 function jsonResponse(body, status, extraHeaders = {}) {
   return new Response(JSON.stringify(body), { status, headers: { ...RESPONSE_HEADERS, ...extraHeaders } });
 }
+
