@@ -16,6 +16,11 @@ const RESPONSE_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
   "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=60"
 };
+const SOURCE_CACHE_DURATION = 5 * 60 * 1000;
+const FINANCIAL_CACHE_DURATION = 6 * 60 * 60 * 1000;
+const sourceCache = new Map();
+const pendingSources = new Map();
+const financialCache = new Map();
 
 export default {
   async fetch(request, env) {
@@ -36,8 +41,10 @@ async function handleStocksRequest(request, requestUrl) {
   }
 
   const stockCode = requestUrl.searchParams.get("code")?.trim().toUpperCase() || "";
+  const stockCodes = requestUrl.searchParams.get("codes")?.split(",").map((code) => code.trim().toUpperCase()).filter(Boolean) || [];
+  if (stockCodes.length > 50) return jsonResponse({ success: false, message: "單次最多查詢 50 檔股票" }, 400);
   try {
-    const results = await Promise.allSettled(OFFICIAL_SOURCES.map(fetchOfficialSource));
+    const results = await Promise.allSettled(OFFICIAL_SOURCES.map((source) => fetchOfficialSource(source, SOURCE_CACHE_DURATION)));
     const data = [];
     const warnings = [];
 
@@ -51,10 +58,14 @@ async function handleStocksRequest(request, requestUrl) {
 
     if (!data.length) return jsonResponse({ success: false, message: "目前無法取得官方股票資料" }, 502);
 
-    const responseData = stockCode ? data.filter((stock) => stock.stockCode === stockCode) : data;
+    const requestedCodes = stockCode ? [stockCode] : stockCodes;
+    const requestedSet = new Set(requestedCodes);
+    const responseData = requestedCodes.length ? data.filter((stock) => requestedSet.has(stock.stockCode)) : data;
     if (stockCode && !responseData.length) {
       return jsonResponse({ success: false, message: "查無此股票代號" }, 404);
     }
+
+    await enrichFinancialData(responseData, warnings, requestedCodes.length > 0);
 
     const body = { success: true, data: responseData };
     if (warnings.length) body.warnings = warnings;
@@ -65,7 +76,20 @@ async function handleStocksRequest(request, requestUrl) {
   }
 }
 
-async function fetchOfficialSource(source) {
+async function fetchOfficialSource(source, cacheDuration) {
+  const cached = sourceCache.get(source.url);
+  if (cached && Date.now() - cached.time < cacheDuration) return cached.data;
+  if (pendingSources.has(source.url)) return pendingSources.get(source.url);
+
+  const request = fetchSource(source).then((data) => {
+    sourceCache.set(source.url, { data, time: Date.now() });
+    return data;
+  }).finally(() => pendingSources.delete(source.url));
+  pendingSources.set(source.url, request);
+  return request;
+}
+
+async function fetchSource(source) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
@@ -74,6 +98,91 @@ async function fetchOfficialSource(source) {
     const payload = await response.json();
     if (!Array.isArray(payload)) throw new Error("官方資料格式不正確");
     return payload.map(source.normalize).filter((stock) => stock.stockCode && stock.stockName);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function enrichFinancialData(stocks, warnings, includeEps) {
+  const yieldResults = await Promise.allSettled([
+    fetchJsonWithCache("https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL", SOURCE_CACHE_DURATION),
+    fetchJsonWithCache("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis", SOURCE_CACHE_DURATION)
+  ]);
+  const yieldMap = new Map();
+  if (yieldResults[0].status === "fulfilled") {
+    yieldResults[0].value.forEach((row) => yieldMap.set(String(row.Code), parseNumber(row.DividendYield)));
+  } else warnings.push("上市殖利率資料暫時無法取得");
+  if (yieldResults[1].status === "fulfilled") {
+    yieldResults[1].value.forEach((row) => yieldMap.set(String(row.SecuritiesCompanyCode), parseNumber(row.YieldRatio)));
+  } else warnings.push("上櫃殖利率資料暫時無法取得");
+
+  await Promise.all(stocks.map(async (stock) => {
+    stock.dividendYield = yieldMap.get(stock.stockCode) ?? null;
+    stock.currentYearEps = null;
+    stock.previousYearEps = null;
+    stock.epsPeriod = null;
+    if (stock.type === "ETF" || !includeEps) return;
+    try {
+      const financial = await fetchFinancialEps(stock.stockCode);
+      Object.assign(stock, financial);
+    } catch (error) {
+      warnings.push(`${stock.stockCode} EPS 資料暫時無法取得`);
+      console.error(`${stock.stockCode} EPS 資料取得失敗`);
+    }
+  }));
+}
+
+async function fetchFinancialEps(stockCode) {
+  const cached = financialCache.get(stockCode);
+  if (cached && Date.now() - cached.time < FINANCIAL_CACHE_DURATION) return cached.data;
+  const currentYear = new Date().getUTCFullYear();
+  const url = new URL("https://api.finmindtrade.com/api/v4/data");
+  url.search = new URLSearchParams({
+    dataset: "TaiwanStockFinancialStatements",
+    data_id: stockCode,
+    start_date: `${currentYear - 1}-01-01`,
+    end_date: `${currentYear}-12-31`
+  });
+  const payload = await fetchJsonWithTimeout(url.toString());
+  if (payload.status !== 200 || !Array.isArray(payload.data)) throw new Error("公開財報資料格式不正確");
+  const rows = payload.data.filter((row) => row.type === "EPS" && Number.isFinite(Number(row.value)));
+  const currentRows = rows.filter((row) => Number(row.date.slice(0, 4)) === currentYear);
+  const previousRows = rows.filter((row) => Number(row.date.slice(0, 4)) === currentYear - 1);
+  const currentYearEps = currentRows.length ? sumValues(currentRows) : null;
+  const previousYearEps = previousRows.length === 4 ? sumValues(previousRows) : null;
+  const latestPeriod = currentRows.map((row) => row.date).sort().at(-1) || null;
+  const data = {
+    currentYearEps,
+    previousYearEps,
+    epsPeriod: latestPeriod ? `${currentYear} Q${Math.ceil(Number(latestPeriod.slice(5, 7)) / 3)} 累積` : null
+  };
+  financialCache.set(stockCode, { data, time: Date.now() });
+  return data;
+}
+
+function sumValues(rows) {
+  return Number(rows.reduce((sum, row) => sum + Number(row.value), 0).toFixed(4));
+}
+
+async function fetchJsonWithCache(url, cacheDuration) {
+  const cached = sourceCache.get(url);
+  if (cached && Date.now() - cached.time < cacheDuration) return cached.data;
+  if (pendingSources.has(url)) return pendingSources.get(url);
+  const request = fetchJsonWithTimeout(url).then((data) => {
+    sourceCache.set(url, { data, time: Date.now() });
+    return data;
+  }).finally(() => pendingSources.delete(url));
+  pendingSources.set(url, request);
+  return request;
+}
+
+async function fetchJsonWithTimeout(url) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(url, { headers: { Accept: "application/json" }, signal: controller.signal });
+    if (!response.ok) throw new Error("外部資料來源回應異常");
+    return response.json();
   } finally {
     clearTimeout(timeoutId);
   }
@@ -110,4 +219,3 @@ function formatRocDate(value) {
 function jsonResponse(body, status, extraHeaders = {}) {
   return new Response(JSON.stringify(body), { status, headers: { ...RESPONSE_HEADERS, ...extraHeaders } });
 }
-
