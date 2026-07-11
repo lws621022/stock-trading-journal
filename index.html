@@ -52,7 +52,7 @@
               maxlength="10" placeholder="例如：2330 或 0050" aria-describedby="stock-code-help">
             <button class="button primary" type="submit">查詢股票</button>
           </div>
-          <p id="stock-code-help" class="field-help">目前使用內建範例資料查詢，不代表即時市場資訊。</p>
+          <p id="stock-code-help" class="field-help">優先查詢官方盤後收盤資料；無法連線時使用內建範例股票名單。</p>
         </form>
         <div id="search-message" class="message" role="status" aria-live="polite" hidden></div>
         <div id="search-result" class="search-result" hidden></div>
@@ -101,6 +101,7 @@
   <footer><div class="container">資料儲存在目前瀏覽器中 · 範例數據僅供功能測試</div></footer>
   <script src="sample-data.js" defer></script>
   <script src="db.js" defer></script>
+  <script src="stock-api.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

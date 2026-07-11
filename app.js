@@ -6,11 +6,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const stockCodeInput = document.querySelector("#stock-code");
   const searchMessage = document.querySelector("#search-message");
   const searchResult = document.querySelector("#search-result");
+  const searchButton = searchForm.querySelector('button[type="submit"]');
   const stockFilter = document.querySelector("#stock-filter");
   const tableBody = document.querySelector("#stock-table-body");
   const emptyState = document.querySelector("#empty-state");
   let savedStocks = [];
   let pendingStock = null;
+  let marketData = new Map();
   let messageTimer;
 
   function setMessage(element, text, type = "success", autoHide = false) {
@@ -53,11 +55,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       if (await StockDB.stockExists(stockCode)) { setMessage(searchMessage, "此股票已存在於個股資料中", "warning"); return; }
-      pendingStock = SAMPLE_STOCKS.find((stock) => stock.stockCode === stockCode) || null;
+      setSearching(true);
+      setMessage(searchMessage, "資料查詢中", "warning");
+      try {
+        const result = await StockAPI.findStock(stockCode);
+        pendingStock = result.stock;
+        if (result.failedMarkets.length) setMessage(searchMessage, `部分市場資料取得失敗：${result.failedMarkets.join("、")}`, "warning");
+        else searchMessage.hidden = true;
+      } catch (apiError) {
+        console.warn(apiError);
+        pendingStock = SAMPLE_STOCKS.find((stock) => stock.stockCode === stockCode) || null;
+        if (pendingStock) setMessage(searchMessage, "官方資料目前無法連線，暫時使用範例股票名單；股價不會使用範例值。", "warning");
+        else { setMessage(searchMessage, "官方資料目前無法連線，且範例資料中查無此股票代號。", "error"); return; }
+      }
       if (!pendingStock) { setMessage(searchMessage, "查無此股票代號", "error"); return; }
       renderSearchResult(pendingStock);
-    } catch (error) { console.error(error); setMessage(searchMessage, "資料庫暫時無法使用，請重新整理後再試。", "error"); }
+    } catch (error) { console.error(error); setMessage(searchMessage, "資料查詢失敗，請稍後再試。", "error"); }
+    finally { setSearching(false); }
   });
+
+  function setSearching(isSearching) {
+    searchButton.disabled = isSearching;
+    stockCodeInput.disabled = isSearching;
+    searchButton.textContent = isSearching ? "資料查詢中" : "查詢股票";
+  }
 
   function renderSearchResult(stock) {
     searchResult.innerHTML = `
@@ -88,12 +109,25 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (error) { console.error(error); setMessage(searchMessage, "新增失敗，請稍後再試。", "error"); }
   }
 
-  async function loadStocks(showReloadMessage = false) {
+  async function loadStocks(showReloadMessage = false, forceRefresh = false) {
     try {
       savedStocks = await StockDB.getAllStocks();
       savedStocks.sort((a, b) => a.stockCode.localeCompare(b.stockCode, "zh-Hant", { numeric: true }));
+      marketData = new Map();
       renderStockList();
-      if (showReloadMessage) setMessage(globalMessage, "資料已重新載入", "success", true);
+      if (!savedStocks.length) return;
+      try {
+        const result = await StockAPI.getStocks(savedStocks.map((stock) => stock.stockCode), forceRefresh);
+        marketData = new Map(result.stocks.map((stock) => [stock.stockCode, stock]));
+        renderStockList();
+        const missing = savedStocks.filter((stock) => !marketData.has(stock.stockCode)).length;
+        if (result.failedMarkets.length || missing) setMessage(globalMessage, "部分股票資料取得失敗，無法取得的股價以「—」顯示。", "warning");
+        else if (showReloadMessage) setMessage(globalMessage, "最新收盤資料已重新載入", "success", true);
+      } catch (apiError) {
+        console.warn(apiError);
+        renderStockList();
+        setMessage(globalMessage, "股票資料來源目前無法連線，股價欄位以「—」顯示。", "warning");
+      }
     } catch (error) { console.error(error); setMessage(globalMessage, "無法讀取股票資料，請重新整理後再試。", "error"); }
   }
 
@@ -108,11 +142,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     filtered.forEach((savedStock) => {
       const sample = SAMPLE_STOCKS.find((item) => item.stockCode === savedStock.stockCode) || {};
+      const live = marketData.get(savedStock.stockCode) || {};
       const row = document.createElement("tr");
-      row.innerHTML = `<td>${escapeHtml(savedStock.stockCode)}</td><td class="stock-name">${escapeHtml(savedStock.stockName)}</td>
+      row.innerHTML = `<td>${escapeHtml(savedStock.stockCode)}</td><td class="stock-name">${escapeHtml(live.stockName || savedStock.stockName)}</td>
         <td>${formatNumber(sample.currentYearEps)}</td><td>${formatNumber(sample.previousYearEps)}</td>
-        <td>${formatNumber(sample.dividendYield, "%")}</td><td>${formatNumber(sample.previousClose)}</td>
-        <td>${formatNumber(sample.latestClose)}</td><td>${escapeHtml(sample.updatedAt || "—")}</td>
+        <td>${formatNumber(sample.dividendYield, "%")}</td><td>${formatNumber(live.previousClose)}</td>
+        <td>${formatNumber(live.latestClose)}</td><td>${escapeHtml(live.updatedAt || "—")}</td>
         <td><button class="delete-button" type="button" data-id="${savedStock.id}" data-name="${escapeHtml(savedStock.stockName)}">刪除</button></td>`;
       tableBody.append(row);
     });
@@ -127,7 +162,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   stockFilter.addEventListener("input", renderStockList);
-  document.querySelector("#reload-stocks").addEventListener("click", () => loadStocks(true));
+  document.querySelector("#reload-stocks").addEventListener("click", () => loadStocks(true, true));
   document.querySelector("#clear-stocks").addEventListener("click", async () => {
     if (!savedStocks.length) { setMessage(globalMessage, "目前沒有可清除的股票資料", "warning", true); return; }
     if (!window.confirm("確定要清除全部股票嗎？此操作會刪除目前瀏覽器中的所有股票資料，且無法復原。")) return;
