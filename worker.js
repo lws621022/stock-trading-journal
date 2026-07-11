@@ -1,4 +1,4 @@
-// Cloudflare Pages Function：整合證交所與櫃買中心官方盤後資料。
+// Cloudflare Worker 入口：處理股票 API，其餘請求交由靜態資產服務。
 const OFFICIAL_SOURCES = [
   {
     market: "上市",
@@ -17,14 +17,25 @@ const RESPONSE_HEADERS = {
   "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=60"
 };
 
-export async function onRequest(context) {
-  if (context.request.method !== "GET") {
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/stocks" || url.pathname === "/api/stocks/") {
+      return handleStocksRequest(request, url);
+    }
+    if (url.pathname.startsWith("/api/")) {
+      return jsonResponse({ success: false, message: "查無此 API 路由" }, 404);
+    }
+    return env.ASSETS.fetch(request);
+  }
+};
+
+async function handleStocksRequest(request, requestUrl) {
+  if (request.method !== "GET") {
     return jsonResponse({ success: false, message: "僅支援 GET 請求" }, 405, { Allow: "GET" });
   }
 
-  const requestUrl = new URL(context.request.url);
   const stockCode = requestUrl.searchParams.get("code")?.trim().toUpperCase() || "";
-
   try {
     const results = await Promise.allSettled(OFFICIAL_SOURCES.map(fetchOfficialSource));
     const data = [];
@@ -38,9 +49,7 @@ export async function onRequest(context) {
       }
     });
 
-    if (!data.length) {
-      return jsonResponse({ success: false, message: "目前無法取得官方股票資料" }, 502);
-    }
+    if (!data.length) return jsonResponse({ success: false, message: "目前無法取得官方股票資料" }, 502);
 
     const responseData = stockCode ? data.filter((stock) => stock.stockCode === stockCode) : data;
     if (stockCode && !responseData.length) {
@@ -60,10 +69,7 @@ async function fetchOfficialSource(source) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(source.url, {
-      headers: { Accept: "application/json" },
-      signal: controller.signal
-    });
+    const response = await fetch(source.url, { headers: { Accept: "application/json" }, signal: controller.signal });
     if (!response.ok) throw new Error("官方資料來源回應異常");
     const payload = await response.json();
     if (!Array.isArray(payload)) throw new Error("官方資料格式不正確");
@@ -102,9 +108,6 @@ function formatRocDate(value) {
 }
 
 function jsonResponse(body, status, extraHeaders = {}) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...RESPONSE_HEADERS, ...extraHeaders }
-  });
+  return new Response(JSON.stringify(body), { status, headers: { ...RESPONSE_HEADERS, ...extraHeaders } });
 }
 

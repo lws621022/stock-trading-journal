@@ -1,0 +1,14 @@
+.git/
+.github/
+.agents/
+.codex/
+functions/
+work/
+outputs/
+worker.js
+wrangler.json
+wrangler.jsonc
+wrangler.toml
+README.md
+.assetsignore
+
