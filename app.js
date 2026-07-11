@@ -60,13 +60,12 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const result = await StockAPI.findStock(stockCode);
         pendingStock = result.stock;
-        if (result.failedMarkets.length) setMessage(searchMessage, `部分市場資料取得失敗：${result.failedMarkets.join("、")}`, "warning");
+        if (result.warnings.length) setMessage(searchMessage, result.warnings.join("；"), "warning");
         else searchMessage.hidden = true;
       } catch (apiError) {
         console.warn(apiError);
-        pendingStock = SAMPLE_STOCKS.find((stock) => stock.stockCode === stockCode) || null;
-        if (pendingStock) setMessage(searchMessage, "官方資料目前無法連線，暫時使用範例股票名單；股價不會使用範例值。", "warning");
-        else { setMessage(searchMessage, "官方資料目前無法連線，且範例資料中查無此股票代號。", "error"); return; }
+        setMessage(searchMessage, "目前無法取得官方股票資料", "error");
+        return;
       }
       if (!pendingStock) { setMessage(searchMessage, "查無此股票代號", "error"); return; }
       renderSearchResult(pendingStock);
@@ -121,12 +120,12 @@ document.addEventListener("DOMContentLoaded", () => {
         marketData = new Map(result.stocks.map((stock) => [stock.stockCode, stock]));
         renderStockList();
         const missing = savedStocks.filter((stock) => !marketData.has(stock.stockCode)).length;
-        if (result.failedMarkets.length || missing) setMessage(globalMessage, "部分股票資料取得失敗，無法取得的股價以「—」顯示。", "warning");
+        if (result.warnings.length || missing) setMessage(globalMessage, "部分股票資料取得失敗，無法取得的股價以「—」顯示。", "warning");
         else if (showReloadMessage) setMessage(globalMessage, "最新收盤資料已重新載入", "success", true);
       } catch (apiError) {
         console.warn(apiError);
         renderStockList();
-        setMessage(globalMessage, "股票資料來源目前無法連線，股價欄位以「—」顯示。", "warning");
+        setMessage(globalMessage, "目前無法取得官方股票資料", "warning");
       }
     } catch (error) { console.error(error); setMessage(globalMessage, "無法讀取股票資料，請重新整理後再試。", "error"); }
   }
