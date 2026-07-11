@@ -6,6 +6,8 @@ const StockAPI = (() => {
   let pendingRequest = null;
   const stockCache = new Map();
   const pendingStockRequests = new Map();
+  const listCache = new Map();
+  const pendingLists = new Map();
 
   async function fetchAll(force = false) {
     const now = Date.now();
@@ -46,11 +48,23 @@ const StockAPI = (() => {
   }
 
   async function getStocks(stockCodes, force = false) {
-    const result = await fetchAll(force);
-    const wanted = new Set(stockCodes);
-    return { stocks: result.records.filter((item) => wanted.has(item.stockCode)), warnings: result.warnings };
+    const normalizedCodes = [...new Set(stockCodes)].sort();
+    const key = normalizedCodes.join(",");
+    const cached = listCache.get(key);
+    if (!force && cached && Date.now() - cached.time < CACHE_DURATION) return cached.value;
+    if (!force && pendingLists.has(key)) return pendingLists.get(key);
+
+    const request = fetch(`/api/stocks?codes=${encodeURIComponent(key)}`, { cache: force ? "reload" : "default" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success || !Array.isArray(payload.data)) throw new Error(payload?.message || "目前無法取得官方股票資料");
+        return { stocks: payload.data, warnings: payload.warnings || [] };
+      })
+      .then((value) => { listCache.set(key, { value, time: Date.now() }); return value; })
+      .finally(() => pendingLists.delete(key));
+    pendingLists.set(key, request);
+    return request;
   }
 
   return Object.freeze({ findStock, getStocks });
 })();
-

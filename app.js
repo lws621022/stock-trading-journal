@@ -140,12 +140,11 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     filtered.forEach((savedStock) => {
-      const sample = SAMPLE_STOCKS.find((item) => item.stockCode === savedStock.stockCode) || {};
       const live = marketData.get(savedStock.stockCode) || {};
       const row = document.createElement("tr");
       row.innerHTML = `<td>${escapeHtml(savedStock.stockCode)}</td><td class="stock-name">${escapeHtml(live.stockName || savedStock.stockName)}</td>
-        <td>${formatNumber(sample.currentYearEps)}</td><td>${formatNumber(sample.previousYearEps)}</td>
-        <td>${formatNumber(sample.dividendYield, "%")}</td><td>${formatNumber(live.previousClose)}</td>
+        <td>${formatNumber(live.currentYearEps)}</td><td>${formatNumber(live.previousYearEps)}</td>
+        <td>${formatNumber(live.dividendYield, "%")}</td><td>${formatNumber(live.previousClose)}</td>
         <td>${formatNumber(live.latestClose)}</td><td>${escapeHtml(live.updatedAt || "—")}</td>
         <td><button class="delete-button" type="button" data-id="${savedStock.id}" data-name="${escapeHtml(savedStock.stockName)}">刪除</button></td>`;
       tableBody.append(row);
@@ -174,4 +173,3 @@ document.addEventListener("DOMContentLoaded", () => {
 
   StockDB.openDatabase().catch((error) => { console.error(error); setMessage(globalMessage, "瀏覽器不支援或無法啟用本機資料庫。", "error"); });
 });
-
