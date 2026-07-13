@@ -28,6 +28,8 @@ const FINANCIAL_CACHE_DURATION = 6 * 60 * 60 * 1000;
 const sourceCache = new Map();
 const pendingSources = new Map();
 const financialCache = new Map();
+const priceHistoryCache = new Map();
+const pendingPriceHistories = new Map();
 
 export default {
   async fetch(request, env) {
@@ -49,9 +51,10 @@ async function handleStocksRequest(request, requestUrl) {
 
   const stockCode = requestUrl.searchParams.get("code")?.trim().toUpperCase() || "";
   const stockCodes = requestUrl.searchParams.get("codes")?.split(",").map((code) => code.trim().toUpperCase()).filter(Boolean) || [];
+  const forceRefresh = requestUrl.searchParams.has("refresh");
   if (stockCodes.length > 50) return jsonResponse({ success: false, message: "單次最多查詢 50 檔股票" }, 400);
   try {
-    const results = await Promise.allSettled(OFFICIAL_SOURCES.map((source) => fetchOfficialSource(source, SOURCE_CACHE_DURATION)));
+    const results = await Promise.allSettled(OFFICIAL_SOURCES.map((source) => fetchOfficialSource(source, SOURCE_CACHE_DURATION, forceRefresh)));
     const data = [];
     const warnings = [];
     const failedMarkets = [];
@@ -81,21 +84,22 @@ async function handleStocksRequest(request, requestUrl) {
       return jsonResponse({ success: false, message: "查無此股票代號" }, 404);
     }
 
-    await enrichFinancialData(responseData, warnings, requestedCodes.length > 0);
+    if (requestedCodes.length) await enrichHistoricalPrices(responseData, warnings, forceRefresh);
+    await enrichFinancialData(responseData, warnings, requestedCodes.length > 0, forceRefresh);
 
     const body = { success: true, data: responseData };
     if (warnings.length) body.warnings = warnings;
-    return jsonResponse(body, 200);
+    return jsonResponse(body, 200, forceRefresh ? { "Cache-Control": "no-store" } : {});
   } catch (error) {
     console.error("股票 API 發生未預期錯誤");
     return jsonResponse({ success: false, message: "目前無法取得官方股票資料" }, 500);
   }
 }
 
-async function fetchOfficialSource(source, cacheDuration) {
+async function fetchOfficialSource(source, cacheDuration, forceRefresh = false) {
   const cached = sourceCache.get(source.url);
-  if (cached && Date.now() - cached.time < cacheDuration) return cached.data;
-  if (pendingSources.has(source.url)) return pendingSources.get(source.url);
+  if (!forceRefresh && cached && Date.now() - cached.time < cacheDuration) return cached.data;
+  if (!forceRefresh && pendingSources.has(source.url)) return pendingSources.get(source.url);
 
   const request = fetchSource(source).then((data) => {
     sourceCache.set(source.url, { data, time: Date.now() });
@@ -144,10 +148,98 @@ function formatSourceWarning(market, error) {
   return `${market}資料暫時無法取得（${reason}）`;
 }
 
-async function enrichFinancialData(stocks, warnings, includeEps) {
+// 逐檔讀取官方日成交資訊，直接使用最近兩個實際交易日的收盤價。
+async function enrichHistoricalPrices(stocks, warnings, forceRefresh) {
+  const results = await Promise.allSettled(stocks.map((stock) => fetchStockPriceHistory(stock, forceRefresh)));
+  const today = getTaipeiDate();
+
+  results.forEach((result, index) => {
+    const stock = stocks[index];
+    if (result.status === "fulfilled") {
+      Object.assign(stock, result.value);
+      if (result.value.updatedAt < today) {
+        addWarning(warnings, `官方資料目前最新日期為 ${result.value.updatedAt}`);
+      }
+      return;
+    }
+    stock.latestClose = null;
+    stock.previousClose = null;
+    stock.updatedAt = null;
+    addWarning(warnings, `${stock.stockCode} 最近兩個交易日收盤資料暫時無法取得`);
+    console.error(`${stock.stockCode} 歷史收盤資料取得失敗`);
+  });
+}
+
+async function fetchStockPriceHistory(stock, forceRefresh = false) {
+  const cacheKey = `${stock.market}:${stock.stockCode}`;
+  const cached = priceHistoryCache.get(cacheKey);
+  if (!forceRefresh && cached && Date.now() - cached.time < SOURCE_CACHE_DURATION) return cached.data;
+  if (!forceRefresh && pendingPriceHistories.has(cacheKey)) return pendingPriceHistories.get(cacheKey);
+
+  const request = loadStockPriceHistory(stock).then((data) => {
+    priceHistoryCache.set(cacheKey, { data, time: Date.now() });
+    return data;
+  }).finally(() => pendingPriceHistories.delete(cacheKey));
+  pendingPriceHistories.set(cacheKey, request);
+  return request;
+}
+
+async function loadStockPriceHistory(stock) {
+  const queryDates = getHistoryQueryDates();
+  const records = [];
+  for (const queryDate of queryDates) {
+    records.push(...await fetchHistoryMonth(stock, queryDate));
+    if (new Set(records.map((record) => record.date)).size >= 2) break;
+  }
+
+  const uniqueRecords = [...new Map(records.filter((record) => record.date && record.close !== null)
+    .map((record) => [record.date, record])).values()].sort((a, b) => a.date.localeCompare(b.date));
+  if (uniqueRecords.length < 2) throw new SourceError("找不到最近兩個有效交易日");
+  const latest = uniqueRecords.at(-1);
+  const previous = uniqueRecords.at(-2);
+  return { latestClose: latest.close, previousClose: previous.close, updatedAt: latest.date };
+}
+
+async function fetchHistoryMonth(stock, queryDate) {
+  if (stock.market === "上市") {
+    const url = new URL("https://www.twse.com.tw/exchangeReport/STOCK_DAY");
+    url.search = new URLSearchParams({ response: "json", date: queryDate.replaceAll("-", ""), stockNo: stock.stockCode });
+    const payload = await fetchJsonWithTimeout(url.toString());
+    if (payload.stat !== "OK" || !Array.isArray(payload.data)) throw new SourceError("證交所個股日成交格式不正確");
+    return payload.data.map((row) => ({ date: formatRocDate(row[0]), close: parseNumber(row[6]) }));
+  }
+
+  const url = new URL("https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock");
+  url.search = new URLSearchParams({ code: stock.stockCode, date: queryDate.replaceAll("-", "/"), response: "json" });
+  const payload = await fetchJsonWithTimeout(url.toString());
+  const table = payload.tables?.[0];
+  if (payload.stat !== "ok" || !Array.isArray(table?.data)) throw new SourceError("櫃買中心個股日成交格式不正確");
+  return table.data.map((row) => ({ date: formatRocDate(row[0]), close: parseNumber(row[6]) }));
+}
+
+function getTaipeiDate() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function getHistoryQueryDates() {
+  const today = getTaipeiDate();
+  const [year, month] = today.split("-").map(Number);
+  const previousMonth = new Date(Date.UTC(year, month - 2, 1));
+  return [today, `${previousMonth.getUTCFullYear()}-${String(previousMonth.getUTCMonth() + 1).padStart(2, "0")}-01`];
+}
+
+function addWarning(warnings, message) {
+  if (!warnings.includes(message)) warnings.push(message);
+}
+
+async function enrichFinancialData(stocks, warnings, includeEps, forceRefresh) {
   const yieldResults = await Promise.allSettled([
-    fetchJsonWithCache("https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL", SOURCE_CACHE_DURATION),
-    fetchJsonWithCache("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis", SOURCE_CACHE_DURATION)
+    fetchJsonWithCache("https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL", SOURCE_CACHE_DURATION, forceRefresh),
+    fetchJsonWithCache("https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis", SOURCE_CACHE_DURATION, forceRefresh)
   ]);
   const yieldMap = new Map();
   if (yieldResults[0].status === "fulfilled") {
@@ -164,7 +256,7 @@ async function enrichFinancialData(stocks, warnings, includeEps) {
     stock.epsPeriod = null;
     if (stock.type === "ETF" || !includeEps) return;
     try {
-      const financial = await fetchFinancialEps(stock.stockCode);
+      const financial = await fetchFinancialEps(stock.stockCode, forceRefresh);
       Object.assign(stock, financial);
     } catch (error) {
       warnings.push(`${stock.stockCode} EPS 資料暫時無法取得`);
@@ -173,9 +265,9 @@ async function enrichFinancialData(stocks, warnings, includeEps) {
   }));
 }
 
-async function fetchFinancialEps(stockCode) {
+async function fetchFinancialEps(stockCode, forceRefresh = false) {
   const cached = financialCache.get(stockCode);
-  if (cached && Date.now() - cached.time < FINANCIAL_CACHE_DURATION) return cached.data;
+  if (!forceRefresh && cached && Date.now() - cached.time < FINANCIAL_CACHE_DURATION) return cached.data;
   const currentYear = new Date().getUTCFullYear();
   const url = new URL("https://api.finmindtrade.com/api/v4/data");
   url.search = new URLSearchParams({
@@ -205,10 +297,10 @@ function sumValues(rows) {
   return Number(rows.reduce((sum, row) => sum + Number(row.value), 0).toFixed(4));
 }
 
-async function fetchJsonWithCache(url, cacheDuration) {
+async function fetchJsonWithCache(url, cacheDuration, forceRefresh = false) {
   const cached = sourceCache.get(url);
-  if (cached && Date.now() - cached.time < cacheDuration) return cached.data;
-  if (pendingSources.has(url)) return pendingSources.get(url);
+  if (!forceRefresh && cached && Date.now() - cached.time < cacheDuration) return cached.data;
+  if (!forceRefresh && pendingSources.has(url)) return pendingSources.get(url);
   const request = fetchJsonWithTimeout(url).then((data) => {
     sourceCache.set(url, { data, time: Date.now() });
     return data;
@@ -231,14 +323,14 @@ async function fetchJsonWithTimeout(url) {
 
 function normalizeStock(code, name, latestValue, changeValue, dateValue, market) {
   const latestClose = parseNumber(latestValue);
-  const change = parseNumber(changeValue);
   return {
     stockCode: String(code || "").trim().toUpperCase(),
     stockName: String(name || "").trim(),
     market,
     type: String(code || "").trim().startsWith("00") ? "ETF" : "股票",
     latestClose,
-    previousClose: latestClose !== null && change !== null ? latestClose - change : null,
+    // 前一日收盤價只由個股歷史日成交資料取得，不再用漲跌價差反推。
+    previousClose: null,
     updatedAt: formatRocDate(dateValue)
   };
 }
