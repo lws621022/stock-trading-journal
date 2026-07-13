@@ -14,7 +14,8 @@ const StockAPI = (() => {
     if (!force && cache && now - cacheTime < CACHE_DURATION) return cache;
     if (!force && pendingRequest) return pendingRequest;
 
-    pendingRequest = fetch("/api/stocks", { cache: force ? "reload" : "default" }).then(async (response) => {
+    const url = force ? `/api/stocks?refresh=${Date.now()}` : "/api/stocks";
+    pendingRequest = fetch(url, { cache: force ? "no-store" : "default" }).then(async (response) => {
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.success || !Array.isArray(payload.data)) {
         throw new Error(payload?.message || "目前無法取得官方股票資料");
@@ -34,7 +35,8 @@ const StockAPI = (() => {
     if (!force && cachedStock && Date.now() - cachedStock.time < CACHE_DURATION) return cachedStock.value;
     if (!force && pendingStockRequests.has(stockCode)) return pendingStockRequests.get(stockCode);
 
-    const request = fetch(`/api/stocks?code=${encodeURIComponent(stockCode)}`, { cache: force ? "reload" : "default" })
+    const refresh = force ? `&refresh=${Date.now()}` : "";
+    const request = fetch(`/api/stocks?code=${encodeURIComponent(stockCode)}${refresh}`, { cache: force ? "no-store" : "default" })
       .then(async (response) => {
         const payload = await response.json().catch(() => null);
         if (response.status === 404) return { stock: null, warnings: [] };
@@ -54,7 +56,8 @@ const StockAPI = (() => {
     if (!force && cached && Date.now() - cached.time < CACHE_DURATION) return cached.value;
     if (!force && pendingLists.has(key)) return pendingLists.get(key);
 
-    const request = fetch(`/api/stocks?codes=${encodeURIComponent(key)}`, { cache: force ? "reload" : "default" })
+    const refresh = force ? `&refresh=${Date.now()}` : "";
+    const request = fetch(`/api/stocks?codes=${encodeURIComponent(key)}${refresh}`, { cache: force ? "no-store" : "default" })
       .then(async (response) => {
         const payload = await response.json().catch(() => null);
         if (!response.ok || !payload?.success || !Array.isArray(payload.data)) throw new Error(payload?.message || "目前無法取得官方股票資料");
@@ -68,3 +71,4 @@ const StockAPI = (() => {
 
   return Object.freeze({ findStock, getStocks });
 })();
+
