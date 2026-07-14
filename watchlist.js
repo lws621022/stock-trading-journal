@@ -101,7 +101,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <td data-label="今日最低價">${formatPrice(quote.low)}</td>
         <td data-label="昨日收盤價">${formatPrice(quote.previousClose)}</td>
         <td data-label="成交量">${formatVolume(quote.volume)}</td>
-        <td data-label="行情時間">${escapeHtml(quote.updatedAt || "—")}${entry.failed ? '<span class="quote-error">更新失敗</span>' : ""}</td>
+        <td data-label="行情時間">${escapeHtml(formatQuoteTime(quote.updatedAt))}${entry.failed ? '<span class="quote-error">更新失敗</span>' : ""}</td>
         <td data-label="操作">
           <div class="row-actions">
             <button class="order-button" type="button" data-action="up" title="上移" aria-label="${escapeHtml(entry.name)}上移" ${!manualSort || originalIndex === 0 ? "disabled" : ""}>↑</button>
@@ -338,6 +338,12 @@ document.addEventListener("DOMContentLoaded", () => {
   function formatVolume(value) {
     const number = toFiniteNumber(value);
     return number !== null ? Math.round(number).toLocaleString("zh-TW") : "—";
+  }
+
+  // 上方最後更新保留完整日期；每檔行情只顯示官方回傳的時間。
+  function formatQuoteTime(value) {
+    const match = String(value ?? "").match(/(\d{2}:\d{2}:\d{2})/);
+    return match?.[1] || "—";
   }
 
   function toFiniteNumber(value) {
