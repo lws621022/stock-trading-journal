@@ -36,6 +36,8 @@ document.addEventListener("DOMContentLoaded", () => {
       page.classList.toggle("active", active);
       page.hidden = !active;
     });
+    // 讓即時看盤在進入/離開頁面時啟動或停止輪詢，不影響原有 IndexedDB 流程。
+    document.dispatchEvent(new CustomEvent("app:pagechange", { detail: { pageId } }));
     globalMessage.hidden = true;
     if (pageId === "add-page") { clearSearchArea(); stockCodeInput.focus(); }
     if (pageId === "list-page") { stockFilter.value = ""; await loadStocks(); }

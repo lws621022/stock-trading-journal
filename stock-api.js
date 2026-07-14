@@ -1,4 +1,4 @@
-// 前端只呼叫同網域 Pages Function，避免直接連線官方來源造成 CORS 問題。
+// 前端只呼叫同網域 Cloudflare Worker，避免直接連線官方來源造成 CORS 問題。
 const StockAPI = (() => {
   const CACHE_DURATION = 5 * 60 * 1000;
   let cache = null;
@@ -8,6 +8,7 @@ const StockAPI = (() => {
   const pendingStockRequests = new Map();
   const listCache = new Map();
   const pendingLists = new Map();
+  const pendingQuoteRequests = new Map();
 
   async function fetchAll(force = false) {
     const now = Date.now();
@@ -69,6 +70,33 @@ const StockAPI = (() => {
     return request;
   }
 
-  return Object.freeze({ findStock, getStocks });
+  // 即時看盤沿用 /api/stocks，以單次批次請求取得最多 50 檔行情。
+  async function getQuotes(stockCodes, force = false) {
+    const normalizedCodes = [...new Set(stockCodes.map((code) => String(code).trim().toUpperCase()))].filter(Boolean);
+    if (!normalizedCodes.length) return { stocks: [], failedCodes: [], warnings: [] };
+    const key = normalizedCodes.join(",");
+    if (pendingQuoteRequests.has(key)) return pendingQuoteRequests.get(key);
+
+    const refresh = force ? `&refresh=${Date.now()}` : "";
+    const request = fetch(`/api/stocks?realtime=1&codes=${encodeURIComponent(key)}${refresh}`, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.success || !Array.isArray(payload.data)) {
+          const error = new Error(payload?.message || "目前無法取得即時行情");
+          error.failedCodes = payload?.failedCodes || normalizedCodes;
+          throw error;
+        }
+        return {
+          stocks: payload.data,
+          failedCodes: Array.isArray(payload.failedCodes) ? payload.failedCodes : [],
+          warnings: Array.isArray(payload.warnings) ? payload.warnings : []
+        };
+      })
+      .finally(() => pendingQuoteRequests.delete(key));
+    pendingQuoteRequests.set(key, request);
+    return request;
+  }
+
+  return Object.freeze({ findStock, getStocks, getQuotes });
 })();
 
