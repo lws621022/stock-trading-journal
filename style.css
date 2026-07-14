@@ -81,7 +81,18 @@ tbody tr:hover { background: #f8fbff; }
 .sort-field { width: min(300px, 100%); }
 .sort-field label { margin-bottom: 6px; }
 .sort-field select { width: 100%; }
-.watchlist-table { min-width: 1380px; }
+.watchlist-table { min-width: 1260px; table-layout: auto; }
+.watchlist-table th, .watchlist-table td { padding: 10px 7px; }
+.watchlist-table th:nth-child(1), .watchlist-table td:nth-child(1) { width: 72px; }
+.watchlist-table th:nth-child(2), .watchlist-table td:nth-child(2) { width: 112px; }
+.watchlist-table th:nth-child(3), .watchlist-table td:nth-child(3) { width: 90px; }
+.watchlist-table th:nth-child(4), .watchlist-table td:nth-child(4),
+.watchlist-table th:nth-child(5), .watchlist-table td:nth-child(5) { width: 82px; }
+.watchlist-table th:nth-child(n+6):nth-child(-n+9),
+.watchlist-table td:nth-child(n+6):nth-child(-n+9) { width: 70px; }
+.watchlist-table th:nth-child(10), .watchlist-table td:nth-child(10) { width: 82px; }
+.watchlist-table th:nth-child(11), .watchlist-table td:nth-child(11) { width: 84px; }
+.watchlist-table th:nth-child(12), .watchlist-table td:nth-child(12) { width: 132px; }
 .watchlist-table td { vertical-align: middle; }
 .quote-price { font-size: 1rem; font-weight: 800; }
 .quote-up { color: #d43838; }
@@ -89,11 +100,14 @@ tbody tr:hover { background: #f8fbff; }
 .quote-flat { color: #526579; }
 .quote-error { display: block; margin-top: 3px; color: var(--error); font-size: .78rem; font-weight: 700; }
 .row-actions { display: flex; gap: 6px; }
-.order-button, .watchlist-delete { min-width: 40px; min-height: 40px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; color: var(--navy); background: white; font-weight: 750; }
+.order-button, .watchlist-delete { min-width: 34px; min-height: 36px; padding: 5px 7px; border: 1px solid var(--border); border-radius: 8px; color: var(--navy); background: white; font-weight: 750; }
 .order-button:hover { border-color: #9fb3c8; background: #f2f6fa; }
 .order-button:disabled { cursor: not-allowed; opacity: .42; }
-.watchlist-delete { border-color: #f2a5b2; color: #b82941; }
+.watchlist-delete { min-width: 48px; border-color: #f2a5b2; color: #b82941; }
 .watchlist-delete:hover { background: #fff1f3; }
+@media (min-width: 1213px) {
+  .watchlist-panel { position: relative; left: 50%; width: min(1560px, calc(100vw - 32px)); transform: translateX(-50%); }
+}
 footer { padding: 24px 0; border-top: 1px solid var(--border); color: var(--muted); background: white; text-align: center; font-size: .88rem; }
 [hidden] { display: none !important; }
 @media (max-width: 720px) {
