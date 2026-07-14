@@ -32,6 +32,11 @@
           <span class="feature-title">個股資料</span>
           <span class="feature-description">查看、搜尋與管理已加入的股票</span>
         </button>
+        <button class="feature-card" type="button" data-page="watchlist-page">
+          <span class="feature-icon" aria-hidden="true">⌁</span>
+          <span class="feature-title">即時看盤</span>
+          <span class="feature-description">建立自選股並查看即時行情</span>
+        </button>
       </div>
     </section>
 
@@ -96,12 +101,70 @@
         </div>
       </div>
     </section>
+
+    <section id="watchlist-page" class="page" aria-labelledby="watchlist-heading" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">自選股行情</p>
+          <h2 id="watchlist-heading">即時看盤</h2>
+        </div>
+        <button class="button secondary" type="button" data-page="home-page">返回首頁</button>
+      </div>
+
+      <div class="panel watchlist-panel">
+        <div class="market-summary" aria-live="polite">
+          <span id="market-status" class="market-status closed">非交易時間</span>
+          <span>最後更新：<strong id="watchlist-updated-at">尚未更新</strong></span>
+          <span class="refresh-note">交易時段每 15 秒更新</span>
+        </div>
+
+        <form id="watchlist-form" class="watchlist-form" novalidate>
+          <div class="watchlist-input">
+            <label for="watchlist-code">股票代號</label>
+            <input id="watchlist-code" name="stockCode" type="text" inputmode="numeric" autocomplete="off"
+              maxlength="10" placeholder="例如：2330、2317、0050" aria-describedby="watchlist-help">
+          </div>
+          <button id="watchlist-add" class="button primary" type="submit">新增股票</button>
+        </form>
+        <p id="watchlist-help" class="field-help">清單儲存在此瀏覽器，最多 50 支股票；按 Enter 也可新增。</p>
+        <div id="watchlist-message" class="message" role="status" aria-live="polite" hidden></div>
+
+        <div class="watchlist-toolbar">
+          <div class="sort-field">
+            <label for="watchlist-sort">排序方式</label>
+            <select id="watchlist-sort">
+              <option value="manual">使用者自行排列</option>
+              <option value="code">股票代碼</option>
+              <option value="change-desc">漲跌幅由高到低</option>
+              <option value="change-asc">漲跌幅由低到高</option>
+            </select>
+          </div>
+          <button id="watchlist-refresh" class="button secondary" type="button">立即更新</button>
+        </div>
+
+        <div class="table-wrapper watchlist-table-wrapper">
+          <table class="watchlist-table">
+            <thead>
+              <tr>
+                <th scope="col">股票代號</th><th scope="col">股票名稱</th><th scope="col">目前成交價</th>
+                <th scope="col">漲跌金額</th><th scope="col">漲跌幅</th><th scope="col">開盤</th>
+                <th scope="col">最高</th><th scope="col">最低</th><th scope="col">昨收</th>
+                <th scope="col">成交量</th><th scope="col">行情時間</th><th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody id="watchlist-table-body"></tbody>
+          </table>
+          <p id="watchlist-empty" class="empty-state">尚未加入自選股</p>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <footer><div class="container">股票名稱、收盤價與殖利率來自官方盤後資料，並非盤中即時價 · EPS 來自公開財報資料</div></footer>
+  <footer><div class="container">個股資料使用官方盤後資訊 · 即時看盤使用證交所基本市況資訊 · EPS 來自公開財報資料</div></footer>
   <script src="sample-data.js" defer></script>
   <script src="db.js" defer></script>
   <script src="stock-api.js" defer></script>
+  <script src="watchlist.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

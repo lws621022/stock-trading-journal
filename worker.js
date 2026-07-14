@@ -53,6 +53,9 @@ async function handleStocksRequest(request, requestUrl) {
   const stockCodes = requestUrl.searchParams.get("codes")?.split(",").map((code) => code.trim().toUpperCase()).filter(Boolean) || [];
   const forceRefresh = requestUrl.searchParams.has("refresh");
   if (stockCodes.length > 50) return jsonResponse({ success: false, message: "單次最多查詢 50 檔股票" }, 400);
+  if (requestUrl.searchParams.get("realtime") === "1") {
+    return handleRealtimeQuotes(stockCode ? [stockCode] : stockCodes, forceRefresh);
+  }
   try {
     const results = await Promise.allSettled(OFFICIAL_SOURCES.map((source) => fetchOfficialSource(source, SOURCE_CACHE_DURATION, forceRefresh)));
     const data = [];
@@ -94,6 +97,120 @@ async function handleStocksRequest(request, requestUrl) {
     console.error("股票 API 發生未預期錯誤");
     return jsonResponse({ success: false, message: "目前無法取得官方股票資料" }, 500);
   }
+}
+
+// 沿用同一條 /api/stocks 路由，批次向證交所基本市況系統取得上市、上櫃即時行情。
+async function handleRealtimeQuotes(requestedCodes, forceRefresh) {
+  const codes = [...new Set(requestedCodes)];
+  if (!codes.length) return jsonResponse({ success: false, message: "請提供要查詢的股票代號" }, 400);
+  if (codes.length > 50) return jsonResponse({ success: false, message: "單次最多查詢 50 檔股票" }, 400);
+  if (codes.some((code) => !/^[0-9A-Z]{2,10}$/.test(code))) {
+    return jsonResponse({ success: false, message: "股票代號格式不正確" }, 400);
+  }
+
+  try {
+    const sourceResults = await Promise.allSettled(
+      OFFICIAL_SOURCES.map((source) => fetchOfficialSource(source, SOURCE_CACHE_DURATION, forceRefresh))
+    );
+    const stockMap = new Map();
+    const warnings = [];
+    sourceResults.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        result.value.forEach((stock) => stockMap.set(stock.stockCode, stock));
+      } else {
+        warnings.push(formatSourceWarning(OFFICIAL_SOURCES[index].market, result.reason));
+      }
+    });
+    if (!stockMap.size) return jsonResponse({ success: false, message: "目前無法確認股票代號與市場" }, 502, { "Cache-Control": "no-store" });
+
+    const foundStocks = codes.map((code) => stockMap.get(code)).filter(Boolean);
+    const failedCodes = codes.filter((code) => !stockMap.has(code));
+    if (!foundStocks.length) {
+      const status = warnings.length ? 503 : 404;
+      return jsonResponse({ success: false, message: warnings.length ? "官方股票資料暫時無法使用" : "查無此股票代號", warnings }, status, { "Cache-Control": "no-store" });
+    }
+
+    const batches = chunkArray(foundStocks, 20);
+    const batchResults = await Promise.allSettled(batches.map(fetchRealtimeBatch));
+    const quotes = [];
+    batchResults.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        quotes.push(...result.value);
+      } else {
+        batches[index].forEach((stock) => failedCodes.push(stock.stockCode));
+        warnings.push(`即時行情第 ${index + 1} 批更新失敗`);
+      }
+    });
+
+    const receivedCodes = new Set(quotes.map((quote) => quote.stockCode));
+    foundStocks.forEach((stock) => {
+      if (!receivedCodes.has(stock.stockCode)) failedCodes.push(stock.stockCode);
+    });
+    const uniqueFailedCodes = [...new Set(failedCodes)];
+    if (!quotes.length) {
+      return jsonResponse({ success: false, message: "目前無法取得即時行情", failedCodes: uniqueFailedCodes, warnings }, 502, { "Cache-Control": "no-store" });
+    }
+
+    const body = { success: true, data: quotes, failedCodes: uniqueFailedCodes };
+    if (warnings.length) body.warnings = warnings;
+    return jsonResponse(body, 200, { "Cache-Control": "no-store" });
+  } catch (error) {
+    console.error("即時行情 API 發生未預期錯誤");
+    return jsonResponse({ success: false, message: "目前無法取得即時行情" }, 500, { "Cache-Control": "no-store" });
+  }
+}
+
+async function fetchRealtimeBatch(stocks) {
+  const channels = stocks.map((stock) => `${stock.market === "上市" ? "tse" : "otc"}_${stock.stockCode}.tw`);
+  const url = new URL("https://mis.twse.com.tw/stock/api/getStockInfo.jsp");
+  url.search = new URLSearchParams({ ex_ch: channels.join("|"), json: "1", delay: "0", _: String(Date.now()) });
+  const payload = await fetchJsonWithTimeout(url.toString(), {
+    Referer: "https://mis.twse.com.tw/stock/index.jsp"
+  });
+  if (!Array.isArray(payload.msgArray)) throw new SourceError("即時行情回傳格式不正確");
+
+  const stockMap = new Map(stocks.map((stock) => [stock.stockCode, stock]));
+  return payload.msgArray.map((item) => normalizeRealtimeQuote(item, stockMap.get(String(item.c || "").trim()))).filter(Boolean);
+}
+
+function normalizeRealtimeQuote(item, fallbackStock) {
+  if (!fallbackStock) return null;
+  const tradedPrice = parseNumber(item.z);
+  const previousClose = parseNumber(item.y) ?? fallbackStock.latestClose;
+  // 尚未成交或非交易時間時，以最後官方收盤價維持可讀資訊。
+  const currentPrice = tradedPrice ?? fallbackStock.latestClose ?? previousClose;
+  if (currentPrice === null || previousClose === null) return null;
+  const change = Number((currentPrice - previousClose).toFixed(4));
+  const changePercent = previousClose === 0 ? null : Number(((change / previousClose) * 100).toFixed(4));
+  return {
+    stockCode: fallbackStock.stockCode,
+    stockName: String(item.n || fallbackStock.stockName).trim(),
+    market: fallbackStock.market,
+    type: fallbackStock.type,
+    currentPrice,
+    change,
+    changePercent,
+    open: parseNumber(item.o),
+    high: parseNumber(item.h),
+    low: parseNumber(item.l),
+    previousClose,
+    volume: parseNumber(item.v),
+    updatedAt: formatRealtimeDateTime(item.d, item.t) || fallbackStock.updatedAt,
+    isRealtimeTrade: tradedPrice !== null
+  };
+}
+
+function formatRealtimeDateTime(dateValue, timeValue) {
+  const digits = String(dateValue || "").replace(/\D/g, "");
+  if (digits.length !== 8) return null;
+  const time = /^\d{2}:\d{2}:\d{2}$/.test(String(timeValue || "")) ? timeValue : "00:00:00";
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)} ${time}`;
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
 }
 
 async function fetchOfficialSource(source, cacheDuration, forceRefresh = false) {
@@ -309,11 +426,11 @@ async function fetchJsonWithCache(url, cacheDuration, forceRefresh = false) {
   return request;
 }
 
-async function fetchJsonWithTimeout(url) {
+async function fetchJsonWithTimeout(url, extraHeaders = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(url, { headers: { Accept: "application/json" }, signal: controller.signal });
+    const response = await fetch(url, { headers: { Accept: "application/json", ...extraHeaders }, signal: controller.signal });
     if (!response.ok) throw new Error("外部資料來源回應異常");
     return response.json();
   } finally {
