@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function ownsUser(userId) {
+      return request.auth != null
+        && request.auth.uid == userId;
+    }
+
+    function hasValidStockFields(data) {
+      return data.keys().hasAll([
+          'stockCode', 'stockName', 'sortOrder', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'stockCode', 'stockName', 'sortOrder', 'createdAt', 'updatedAt'
+        ])
+        && data.stockCode is string
+        && data.stockCode.size() > 0
+        && data.stockCode.size() <= 10
+        && data.stockName is string
+        && data.stockName.size() > 0
+        && data.stockName.size() <= 80
+        && (data.sortOrder is int || data.sortOrder is float)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function hasValidDividendFields(data) {
+      return data.keys().hasAll([
+          'year', 'amount', 'note', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'year', 'amount', 'note', 'createdAt', 'updatedAt'
+        ])
+        && data.year is int
+        && data.year >= 1900
+        && data.year <= 2200
+        && (data.amount is int || data.amount is float)
+        && data.amount >= 0
+        && data.amount <= 100000
+        && data.note is string
+        && data.note.size() <= 200
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{userId}/stocks/{stockCode} {
+      allow read: if ownsUser(userId);
+
+      allow create: if ownsUser(userId)
+        && hasValidStockFields(request.resource.data)
+        && request.resource.data.stockCode == stockCode
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if ownsUser(userId)
+        && hasValidStockFields(request.resource.data)
+        && request.resource.data.stockCode == stockCode
+        && request.resource.data.stockCode == resource.data.stockCode
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+
+      // delete 沒有 request.resource，僅檢查登入者是否擁有這條路徑。
+      allow delete: if ownsUser(userId);
+
+      match /dividends/{yearId} {
+        allow read: if ownsUser(userId);
+
+        allow create: if ownsUser(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/stocks/$(stockCode))
+          && hasValidDividendFields(request.resource.data)
+          && yearId == string(request.resource.data.year)
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+
+        allow update: if ownsUser(userId)
+          && hasValidDividendFields(request.resource.data)
+          && yearId == string(request.resource.data.year)
+          && request.resource.data.year == resource.data.year
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time;
+
+        // delete 時不可讀取 request.resource.data。
+        allow delete: if ownsUser(userId);
+      }
+    }
+  }
+}
