@@ -417,7 +417,7 @@ export async function importCsv(uid, text) {
   const stats = {
     added: 0,
     updated: 0,
-    skipped: rows.length - rowErrors.length - operations.length,
+    skipped: Math.max(0, stockInputs.size + dividendInputs.size - operations.length),
     errors: rowErrors.length,
     details: [...rowErrors]
   };
