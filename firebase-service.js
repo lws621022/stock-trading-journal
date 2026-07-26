@@ -40,7 +40,7 @@ export function validateStock(input) {
   }
   if (!stockName) throw createError("invalid-stock-name", "股票名稱不可空白。");
   if (stockName.length > 80) throw createError("invalid-stock-name", "股票名稱不可超過 80 個字元。");
-  if (!Number.isFinite(sortOrder)) throw createError("invalid-sort-order", "股票排序值必須是數字。");
+  if (!Number.isFinite(sortOrder) || sortOrder < 0 || sortOrder > 1000000) {\n    throw createError("invalid-sort-order", "股票排序值必須是 0～1000000 的數字。");\n  }
 
   return { stockCode, stockName, sortOrder };
 }
@@ -433,7 +433,7 @@ export async function importCsv(uid, text) {
       chunk.forEach((operation) => { stats[operation.status] += 1; });
     } catch (error) {
       stats.errors += chunk.length;
-      stats.details.push(`第 ${Math.floor(offset / MAX_BATCH_WRITES) + 1} 批寫入失敗：${error.message}`);
+      stats.details.push(`第 ${Math.floor(offset / MAX_BATCH_WRITES) + 1} 批寫入失敗，請確認網路與 Firestore 權限。`);
     }
   }
 
@@ -448,7 +448,7 @@ export function getFriendlyError(error, fallback = "操作失敗，請稍後再�
   if (code.includes("not-found")) return "找不到指定的資料，可能已在其他裝置刪除。";
   if (code.includes("duplicate-year")) return error.message;
   if (code.includes("invalid-") || code.includes("auth-required")) return error.message;
-  return error?.message || fallback;
+  return fallback;
 }
 
 export const FirebaseService = Object.freeze({
