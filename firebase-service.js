@@ -118,7 +118,7 @@ export async function getStock(uid, stockCode) {
   });
 }
 
-export async function saveStock(uid, input) {
+export async function saveStock(uid, input, options = {}) {
   const stock = validateStock(input);
   const reference = stockReference(uid, stock.stockCode);
   const snapshot = await getDoc(reference);
@@ -138,7 +138,7 @@ export async function saveStock(uid, input) {
       updatedAt
     });
   }
-  notifyDataChange({ type: "stocks", stockCode: stock.stockCode });
+  if (options.notify !== false) notifyDataChange({ type: "stocks", stockCode: stock.stockCode });
   return { stock, created: !snapshot.exists() };
 }
 
