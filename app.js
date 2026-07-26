@@ -84,21 +84,10 @@ document.addEventListener("DOMContentLoaded", () => {
     stockCodeInput.value = stockCode;
     stockNameInput.value = stockName;
 
-    let stock;
+    let validatedInput;
     try {
-      const currentStocks = await service.getStocks(uid);
-      if (currentStocks.some((item) => item.stockCode === stockCode)) {
-        setMessage(stockFormMessage, "此股票代碼已存在於股票清單中。", "warning");
-        return;
-      }
-      if (currentStocks.length >= MAX_STOCKS) {
-        setMessage(stockFormMessage, `股票清單最多只能儲存 ${MAX_STOCKS} 支股票。`, "error");
-        return;
-      }
-      const sortOrder = currentStocks.reduce(
-        (max, item) => Math.max(max, Number(item.sortOrder) || 0), 0
-      ) + 1;
-      stock = service.validateStock({ stockCode, stockName, sortOrder });
+      // 先在前端驗證，錯誤資料不會送往 Firestore。
+      validatedInput = service.validateStock({ stockCode, stockName, sortOrder: 0 });
     } catch (error) {
       setMessage(stockFormMessage, friendlyError(error, "請確認股票代碼與名稱格式。"), "error");
       return;
@@ -107,6 +96,20 @@ document.addEventListener("DOMContentLoaded", () => {
     setStockSaving(true);
     setMessage(stockFormMessage, "正在儲存股票…", "warning");
     try {
+      const currentStocks = await service.getStocks(uid);
+      if (currentStocks.some((item) => item.stockCode === validatedInput.stockCode)) {
+        setMessage(stockFormMessage, "此股票代碼已存在於股票清單中。", "warning");
+        return;
+      }
+      if (currentStocks.length >= MAX_STOCKS) {
+        setMessage(stockFormMessage, `股票清單最多只能儲存 ${MAX_STOCKS} 支股票。`, "error");
+        return;
+      }
+
+      const sortOrder = currentStocks.reduce(
+        (max, item) => Math.max(max, Number(item.sortOrder) || 0), 0
+      ) + 1;
+      const stock = { ...validatedInput, sortOrder };
       await service.saveStock(uid, stock);
       stockForm.reset();
       await loadStocks();
