@@ -25,7 +25,7 @@
       dialogMessage: $("dividend-dialog-message"),
       records: $("dividend-records-body"),
       recordsEmpty: $("dividend-records-empty"),
-      total: $("dividend-records-total")
+      total: $("dividend-dialog-total")
     });
     state.data = read(DATA_KEY, {});
     state.order = read(ORDER_KEY, []);
