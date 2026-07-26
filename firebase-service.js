@@ -217,8 +217,7 @@ export async function saveDividend(uid, stockCode, input, options = {}) {
       updatedAt
     });
   }
-  notifyDataChange({ type: "dividends", stockCode: code, year: dividend.year });
-  return { dividend, created: !snapshot.exists() };
+  if (options.notify !== false) {\n    notifyDataChange({ type: "dividends", stockCode: code, year: dividend.year });\n  }\n  return { dividend, created: !snapshot.exists() };
 }
 
 export async function replaceDividendYear(uid, stockCode, originalYear, input, allowOverwrite = false) {
