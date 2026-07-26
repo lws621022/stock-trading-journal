@@ -67,7 +67,7 @@ service cloud.firestore {
         allow read: if ownsUser(userId);
 
         allow create: if ownsUser(userId)
-          && exists(/databases/$(database)/documents/users/$(userId)/stocks/$(stockCode))
+          && existsAfter(/databases/$(database)/documents/users/$(userId)/stocks/$(stockCode))
           && hasValidDividendFields(request.resource.data)
           && yearId == string(request.resource.data.year)
           && request.resource.data.createdAt == request.time
