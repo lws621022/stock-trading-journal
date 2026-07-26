@@ -79,7 +79,7 @@
     const map = new Map();
     message(el.message, "");
     try {
-      if (window.StockDB?.getAllStocks) {
+      if (typeof StockDB !== "undefined" && StockDB?.getAllStocks) {
         (await window.StockDB.getAllStocks()).forEach((stock) => {
           const code = normalize(stock.stockCode);
           if (code) map.set(code, { code, name: String(stock.stockName || code).trim() });
