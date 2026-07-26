@@ -234,3 +234,64 @@ footer { padding: 24px 0; border-top: 1px solid var(--border); color: var(--mute
   .cloud-tool-actions { flex-direction: column; }
   .cloud-tool-actions .button, .local-import-panel .button { width: 100%; }
 }
+
+/* 純 Firestore 股票清單：不包含任何行情欄位。 */
+.stock-form {
+  display: grid;
+  grid-template-columns: minmax(170px, .8fr) minmax(240px, 1.4fr) auto;
+  align-items: end;
+  gap: 14px;
+}
+.stock-list-table { min-width: 680px; table-layout: fixed; }
+.stock-list-table th, .stock-list-table td { padding: 12px 10px; vertical-align: middle; }
+.stock-list-table th:nth-child(1) { width: 120px; }
+.stock-list-table th:nth-child(2) { width: 190px; }
+.stock-list-table th:nth-child(3) { width: 190px; }
+.stock-list-table th:nth-child(4) { width: 250px; }
+.stock-order-actions, .stock-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.stock-row-actions { justify-content: flex-start; }
+.sort-position { min-width: 54px; color: var(--muted); font-size: .86rem; }
+
+@media (max-width: 720px) {
+  .stock-form { grid-template-columns: 1fr; }
+  .stock-form .button { width: 100%; }
+  .stock-list-wrapper { overflow: visible; }
+  .stock-list-table { display: block; min-width: 0; }
+  .stock-list-table thead { display: none; }
+  .stock-list-table tbody { display: grid; gap: 14px; }
+  .stock-list-table tr {
+    display: grid;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 7px 20px rgba(16,42,67,.07);
+  }
+  .stock-list-table td {
+    display: flex;
+    min-height: 44px;
+    padding: 8px 2px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border-bottom: 1px solid #edf1f5;
+    white-space: normal;
+    text-align: right;
+  }
+  .stock-list-table td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    color: var(--muted);
+    font-size: .82rem;
+    font-weight: 750;
+    text-align: left;
+  }
+  .stock-list-table td:last-child { padding-top: 12px; border-bottom: 0; }
+  .stock-order-actions, .stock-row-actions { justify-content: flex-end; }
+  .stock-row-actions { max-width: 210px; }
+}
