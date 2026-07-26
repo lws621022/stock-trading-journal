@@ -219,6 +219,40 @@ export async function saveDividend(uid, stockCode, input, options = {}) {
   return { dividend, created: !snapshot.exists() };
 }
 
+export async function replaceDividendYear(uid, stockCode, originalYear, input, allowOverwrite = false) {
+  const code = normalizeCode(stockCode);
+  const dividend = validateDividend(input);
+  const oldYear = Number(originalYear);
+  if (!Number.isInteger(oldYear) || oldYear < 1900 || oldYear > 2200) {
+    throw createError("invalid-year", "原始年度格式不正確。");
+  }
+  if (oldYear === dividend.year) {
+    return saveDividend(uid, code, dividend, { allowUpdate: true });
+  }
+
+  const oldReference = dividendReference(uid, code, oldYear);
+  const newReference = dividendReference(uid, code, dividend.year);
+  const [oldSnapshot, newSnapshot] = await Promise.all([
+    getDoc(oldReference),
+    getDoc(newReference)
+  ]);
+  if (!oldSnapshot.exists()) throw createError("not-found", "找不到原本的股息紀錄。");
+  if (newSnapshot.exists() && !allowOverwrite) {
+    throw createError("duplicate-year", `${code} 已有 ${dividend.year} 年股息紀錄。`);
+  }
+
+  const batch = writeBatch(firestore);
+  const updatedAt = serverTimestamp();
+  const data = newSnapshot.exists()
+    ? { year: dividend.year, amount: dividend.amount, note: dividend.note, updatedAt }
+    : { ...dividend, createdAt: updatedAt, updatedAt };
+  batch.set(newReference, data, { merge: newSnapshot.exists() });
+  batch.delete(oldReference);
+  await batch.commit();
+  notifyDataChange({ type: "dividends", stockCode: code, year: dividend.year });
+  return { dividend, created: !newSnapshot.exists() };
+}
+
 export async function deleteDividend(uid, stockCode, year) {
   const dividend = validateDividend({ year, amount: 0, note: "" });
   await deleteDoc(dividendReference(uid, stockCode, dividend.year));
@@ -429,6 +463,7 @@ export const FirebaseService = Object.freeze({
   getDividends,
   getAllData,
   saveDividend,
+  replaceDividendYear,
   deleteDividend,
   exportCsv,
   importCsv,
