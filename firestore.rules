@@ -20,7 +20,9 @@ service cloud.firestore {
         && data.stockName is string
         && data.stockName.size() > 0
         && data.stockName.size() <= 80
-        && (data.sortOrder is int || data.sortOrder is float)
+        && data.sortOrder is number
+        && data.sortOrder >= 0
+        && data.sortOrder <= 1000000
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -35,7 +37,7 @@ service cloud.firestore {
         && data.year is int
         && data.year >= 1900
         && data.year <= 2200
-        && (data.amount is int || data.amount is float)
+        && data.amount is number
         && data.amount >= 0
         && data.amount <= 100000
         && data.note is string
@@ -67,7 +69,6 @@ service cloud.firestore {
         allow read: if ownsUser(userId);
 
         allow create: if ownsUser(userId)
-          && existsAfter(/databases/$(database)/documents/users/$(userId)/stocks/$(stockCode))
           && hasValidDividendFields(request.resource.data)
           && yearId == string(request.resource.data.year)
           && request.resource.data.createdAt == request.time
