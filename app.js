@@ -24,6 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let marketData = new Map();
   let messageTimer;
   let localStocksCache = [];
+  let localDividendsCache = [];
 
   function setMessage(element, text, type = "success", autoHide = false) {
     if (!element) return;
@@ -282,7 +283,38 @@ document.addEventListener("DOMContentLoaded", () => {
       console.warn("無法讀取 localStorage 匯入來源", error);
     }
 
-    return Array.from(map.values()).map((stock, index) => ({ ...stock, sortOrder: index + 1 }));
+    const dividendMap = new Map();
+    try {
+      const localDividendData = JSON.parse(
+        localStorage.getItem("stock-trading-journal-dividends-v1") || "{}"
+      );
+      if (localDividendData && !Array.isArray(localDividendData)
+        && typeof localDividendData === "object") {
+        Object.entries(localDividendData).forEach(([rawCode, entry]) => {
+          const stockCode = String(rawCode || "").trim().toUpperCase();
+          const stockName = String(entry?.stockName || stockCode).trim();
+          if (stockCode && stockName && !map.has(stockCode)) {
+            map.set(stockCode, { stockCode, stockName });
+          }
+          if (!Array.isArray(entry?.dividends)) return;
+          entry.dividends.forEach((record) => {
+            try {
+              const dividend = service.validateDividend(record);
+              dividendMap.set(`${stockCode}:${dividend.year}`, { stockCode, ...dividend });
+            } catch (error) {
+              console.warn("略過無效的本機股息資料", error);
+            }
+          });
+        });
+      }
+    } catch (error) {
+      console.warn("無法讀取本機股息匯入來源", error);
+    }
+
+    return {
+      stocks: Array.from(map.values()).map((stock, index) => ({ ...stock, sortOrder: index + 1 })),
+      dividends: Array.from(dividendMap.values())
+    };
   }
 
   async function updateLocalImportOffer() {
@@ -290,7 +322,9 @@ document.addEventListener("DOMContentLoaded", () => {
       localImportPanel.hidden = true;
       return;
     }
-    localStocksCache = await collectLocalStocks();
+    const localData = await collectLocalStocks();
+    localStocksCache = localData.stocks;
+    localDividendsCache = localData.dividends;
     localImportPanel.hidden = localStocksCache.length === 0;
   }
 
@@ -316,8 +350,26 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
+    for (const dividend of localDividendsCache) {
+      try {
+        await service.saveDividend(uid, dividend.stockCode, dividend, {
+          allowUpdate: false,
+          notify: false
+        });
+        stats.success += 1;
+      } catch (error) {
+        if (String(error?.code || "").includes("duplicate-year")) stats.skipped += 1;
+        else {
+          console.error("本機股息匯入失敗", error);
+          stats.failed += 1;
+        }
+      }
+    }
+
     if (stats.success) {
-      document.dispatchEvent(new CustomEvent("firebase:datachange", { detail: { type: "import", source: "app" } }));
+      document.dispatchEvent(new CustomEvent("firebase:datachange", {
+        detail: { type: "import", source: "app" }
+      }));
     }
     setMessage(cloudToolsMessage,
       `本機股票匯入完成：成功 ${stats.success}、略過 ${stats.skipped}、失敗 ${stats.failed}。`,
