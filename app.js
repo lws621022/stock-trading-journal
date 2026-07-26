@@ -372,7 +372,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }));
     }
     setMessage(cloudToolsMessage,
-      `本機股票匯入完成：成功 ${stats.success}、略過 ${stats.skipped}、失敗 ${stats.failed}。`,
+      `本機股票與股息匯入完成：成功 ${stats.success}、略過 ${stats.skipped}、失敗 ${stats.failed}。`,
       stats.failed ? "warning" : "success");
     await loadStocks();
     localImportButton.disabled = false;
