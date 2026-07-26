@@ -13,6 +13,7 @@ import { FirebaseService } from "./firebase-service.js";
 
 // 未來若只允許單一帳號，將登入後取得的 UID 填入此處即可。
 const ALLOWED_UID = "";
+let pendingAuthMessage = "";
 
 window.FirebaseService = FirebaseService;
 window.FirebaseAuthState = { user: null, ready: false };
@@ -64,7 +65,9 @@ function applySignedOutState(message = "") {
   elements.footer.hidden = true;
   elements.userName.textContent = "";
   elements.userUid.textContent = "";
-  if (message) showAuthMessage(message, "error");
+  const visibleMessage = message || pendingAuthMessage;
+  pendingAuthMessage = "";
+  if (visibleMessage) showAuthMessage(visibleMessage, "error");
   else showAuthMessage("");
   dispatchAuthChange(null);
 }
@@ -115,8 +118,8 @@ try {
   await initializeAuthPersistence();
   onAuthStateChanged(auth, async (user) => {
     if (user && ALLOWED_UID && user.uid !== ALLOWED_UID) {
+      pendingAuthMessage = "此 Google 帳號未獲授權使用本系統。";
       await signOut(auth);
-      applySignedOutState("此 Google 帳號未獲授權使用本系統。");
       return;
     }
     if (user) applySignedInState(user);
