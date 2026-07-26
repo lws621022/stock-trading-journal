@@ -1,21 +1,16 @@
 
-import {
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut
-} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
-import {
-  auth,
-  googleProvider,
-  initializeAuthPersistence
-} from "./firebase-config.js";
-import { FirebaseService } from "./firebase-service.js";
-
+const AUTH_CDN = "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
 // 未來若只允許單一帳號，將登入後取得的 UID 填入此處即可。
 const ALLOWED_UID = "";
+
+let auth = null;
+let googleProvider = null;
+let FirebaseService = null;
+let signInWithPopup = null;
+let signOut = null;
+let onAuthStateChanged = null;
 let pendingAuthMessage = "";
 
-window.FirebaseService = FirebaseService;
 window.FirebaseAuthState = { user: null, ready: false };
 
 const elements = {
@@ -41,7 +36,9 @@ function getAuthErrorMessage(error) {
   if (!navigator.onLine || code === "auth/network-request-failed") {
     return "網路連線中斷，請恢復連線後再試。";
   }
-  if (code === "auth/popup-blocked") return "登入彈出視窗被瀏覽器封鎖，請允許彈出視窗後重試。";
+  if (code === "auth/popup-blocked") {
+    return "登入彈出視窗被瀏覽器封鎖，請允許彈出視窗後重試。";
+  }
   if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
     return "已取消 Google 登入。";
   }
@@ -85,6 +82,10 @@ function applySignedInState(user) {
 }
 
 elements.login.addEventListener("click", async () => {
+  if (!auth || !signInWithPopup) {
+    showAuthMessage("Firebase 尚未完成初始化，請重新整理後再試。", "error");
+    return;
+  }
   elements.login.disabled = true;
   elements.login.textContent = "登入中…";
   showAuthMessage("正在開啟 Google 登入視窗…", "warning");
@@ -99,6 +100,7 @@ elements.login.addEventListener("click", async () => {
 });
 
 elements.logout.addEventListener("click", async () => {
+  if (!auth || !signOut) return;
   elements.logout.disabled = true;
   elements.logout.textContent = "登出中…";
   try {
@@ -114,21 +116,39 @@ elements.logout.addEventListener("click", async () => {
   }
 });
 
-try {
-  await initializeAuthPersistence();
-  onAuthStateChanged(auth, async (user) => {
-    if (user && ALLOWED_UID && user.uid !== ALLOWED_UID) {
-      pendingAuthMessage = "此 Google 帳號未獲授權使用本系統。";
-      await signOut(auth);
-      return;
-    }
-    if (user) applySignedInState(user);
-    else applySignedOutState();
-  }, (error) => {
-    console.error("Firebase 登入狀態檢查失敗", error);
-    applySignedOutState("無法檢查登入狀態，請重新整理後再試。");
-  });
-} catch (error) {
-  console.error("Firebase 初始化失敗", error);
-  applySignedOutState("Firebase 初始化失敗，請確認設定與網路連線。");
+async function initializeFirebase() {
+  try {
+    const [configModule, serviceModule, authModule] = await Promise.all([
+      import("./firebase-config.js"),
+      import("./firebase-service.js"),
+      import(AUTH_CDN)
+    ]);
+    auth = configModule.auth;
+    googleProvider = configModule.googleProvider;
+    FirebaseService = serviceModule.FirebaseService;
+    signInWithPopup = authModule.signInWithPopup;
+    signOut = authModule.signOut;
+    onAuthStateChanged = authModule.onAuthStateChanged;
+    window.FirebaseService = FirebaseService;
+
+    await configModule.initializeAuthPersistence();
+    onAuthStateChanged(auth, async (user) => {
+      if (user && ALLOWED_UID && user.uid !== ALLOWED_UID) {
+        pendingAuthMessage = "此 Google 帳號未獲授權使用本系統。";
+        await signOut(auth);
+        return;
+      }
+      if (user) applySignedInState(user);
+      else applySignedOutState();
+    }, (error) => {
+      console.error("Firebase 登入狀態檢查失敗", error);
+      applySignedOutState("無法檢查登入狀態，請重新整理後再試。");
+    });
+  } catch (error) {
+    console.error("Firebase 初始化失敗", error);
+    elements.login.disabled = true;
+    applySignedOutState("Firebase 初始化失敗，請確認設定、網路連線與 CDN 是否可用。");
+  }
 }
+
+initializeFirebase();
