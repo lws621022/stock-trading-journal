@@ -317,7 +317,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (stats.success) {
-      document.dispatchEvent(new CustomEvent("firebase:datachange", { detail: { type: "import" } }));
+      document.dispatchEvent(new CustomEvent("firebase:datachange", { detail: { type: "import", source: "app" } }));
     }
     setMessage(cloudToolsMessage,
       `本機股票匯入完成：成功 ${stats.success}、略過 ${stats.skipped}、失敗 ${stats.failed}。`,
