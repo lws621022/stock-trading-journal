@@ -202,3 +202,35 @@ footer { padding: 24px 0; border-top: 1px solid var(--border); color: var(--mute
   .dividend-form-actions .button { width: 100%; }
   .dividend-records-heading { align-items: flex-start; flex-direction: column; gap: 6px; }
 }
+
+/* Firebase 登入、帳號資訊與資料移轉工具。 */
+.account-panel { display: flex; margin-top: 22px; padding: 14px 16px; align-items: center; justify-content: space-between; gap: 18px; border: 1px solid rgba(255,255,255,.28); border-radius: 14px; background: rgba(255,255,255,.1); }
+.account-panel span, .account-panel small { display: block; color: #eef5ff; }
+.account-panel small { margin-top: 3px; font-size: .78rem; }
+.account-panel code { color: white; word-break: break-all; }
+.account-panel .button.secondary { flex: 0 0 auto; }
+.auth-gate { width: min(560px, calc(100% - 32px)); min-height: calc(100vh - 250px); margin: 42px auto 64px; }
+.auth-card { padding: 36px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); text-align: center; }
+.auth-card .eyebrow { color: var(--blue); }
+.auth-card h2 { margin: 8px 0; color: var(--navy); font-size: 1.9rem; }
+.auth-card p:not(.eyebrow) { margin: 0 auto 24px; color: var(--muted); }
+.auth-card .message { margin: 18px 0 0; text-align: left; }
+.cloud-tools { display: flex; margin-top: 24px; align-items: center; justify-content: space-between; gap: 18px 28px; flex-wrap: wrap; }
+.cloud-tools h3 { margin: 2px 0 0; color: var(--navy); }
+.cloud-tools .eyebrow { color: var(--blue); }
+.local-import-panel { flex: 1 1 100%; padding: 16px; border: 1px solid #b8cffb; border-radius: 12px; background: var(--blue-soft); }
+.local-import-panel p { margin: 0 0 10px; }
+.cloud-tool-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.cloud-tools > .field-help, .cloud-tools > .message { flex: 1 1 100%; }
+.cloud-tools > .message { margin: 0; }
+
+@media (max-width: 720px) {
+  .account-panel { align-items: stretch; flex-direction: column; }
+  .account-panel .button { width: 100%; }
+  .auth-gate { width: calc(100% - 24px); margin-block: 28px 48px; }
+  .auth-card { padding: 28px 20px; }
+  .auth-card .button { width: 100%; }
+  .cloud-tools { align-items: stretch; flex-direction: column; }
+  .cloud-tool-actions { flex-direction: column; }
+  .cloud-tool-actions .button, .local-import-panel .button { width: 100%; }
+}

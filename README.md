@@ -1,6 +1,6 @@
 # 我的股票資料庫
 
-一個個人使用的台股資料管理網頁，以純 HTML、CSS 與原生 JavaScript 製作，部署為含靜態資產的 Cloudflare Worker。使用者可以查詢官方盤後股票資料、加入個股資料、搜尋、刪除單筆資料或清除全部資料，不需要登入或雲端資料庫。
+一個個人使用的台股資料管理網頁，以純 HTML、CSS 與原生 JavaScript 製作。網站使用 Firebase Google 登入及 Firestore 同步使用者的股票與股息資料；既有 Cloudflare Worker 繼續提供官方盤後與即時行情 API。
 
 ## 第二階段資料來源
 
@@ -32,14 +32,14 @@ Function 只接受 GET，設定合理的官方請求逾時與五分鐘快取。�
 ## 功能
 
 - 優先依股票代號查詢官方上市、上櫃盤後資料，確認後加入收藏
-- 使用 IndexedDB 保存已加入的股票，避免重複加入
+- 登入後使用 Firestore 保存已加入的股票，避免重複加入並支援跨裝置同步
 - 依股票代號由小到大排序
 - 依股票代號或股票名稱即時搜尋
 - 顯示真實 EPS、官方殖利率、盤後收盤價與資料日期
 - 支援刪除單筆、重新載入及清除全部股票
 - 桌面與手機響應式版面；手機表格可水平捲動
 - 不重新載入頁面即可切換首頁、新增股票及個股資料
-- 使用 localStorage 保存最多 50 支自選股，支援新增、刪除、原始順序、代碼與漲跌幅排序
+- 使用 Firestore 保存最多 50 支自選股與自訂順序，支援新增、刪除、代碼與漲跌幅排序
 - 即時看盤於台灣時間平日 09:00～13:30 每 15 秒更新；離開頁面、背景分頁及非交易時間停止輪詢
 - 單一行情失敗時保留上次成功資料，並在畫面顯示更新失敗
 - 股息紀錄直接整合既有 IndexedDB 股票與即時看盤自選股，可新增、編輯、確認後刪除歷年每股股息
@@ -52,7 +52,11 @@ Function 只接受 GET，設定合理的官方請求逾時與五分鐘快取。�
 - `sample-data.js`：相容舊版載入順序的空資料檔，不再含假 EPS 或殖利率
 - `stock-api.js`：官方上市、上櫃盤後資料查詢、格式整理與記憶體快取
 - `watchlist.js`：自選股 localStorage、即時行情、排序、錯誤處理與自動更新生命週期
-- `dividends.js`：整合既有股票、管理歷年股息、計算加總、排序及 localStorage 持久化
+- `dividends.js`：讀寫 Firestore 股息子集合、計算加總、排序及編輯流程
+- `firebase-config.js`：Firebase CDN 初始化、Authentication persistence 與 Firestore instance
+- `firebase-service.js`：Firestore 股票／股息 CRUD、驗證、batch write 與 CSV 備份還原
+- `auth.js`：Google 登入、登出、UID 顯示、登入閘門與繁體中文錯誤處理
+- `firestore.rules`：使用者 UID 隔離、欄位白名單、型態與 timestamp 驗證
 - `worker.js`：Cloudflare Worker 入口，處理 `/api/stocks` 並整合兩個官方來源
 - `wrangler.jsonc`：Worker、workers.dev 與靜態資產部署設定
 - `.assetsignore`：排除不應作為公開靜態資產上傳的伺服器端與開發檔案
@@ -77,7 +81,7 @@ npx wrangler dev
 - `/api/stocks?code=9999`（應回傳 404）
 - `/api/stocks?realtime=1&codes=2330,2317,0050`（批次即時行情）
 
-看到 HTTP 200 且 JSON 包含 `"success": true` 與股票資料，即代表 Function 已啟用。網站中也應能重新載入官方收盤資料；重新整理頁面後，IndexedDB 中已加入的股票仍會存在。
+看到 HTTP 200 且 JSON 包含 `"success": true` 與股票資料，即代表 Function 已啟用。網站中也應能重新載入官方收盤資料；登入後，重新整理頁面仍會從 Firestore 載入已加入的股票。
 
 即時看盤另應確認 2330、2317、0050 可新增且重新整理後仍存在；重複代號與無效代號會顯示錯誤；刪除後重新整理不會復原。手機寬度下每檔股票會改為卡片，交易時段可觀察 15 秒更新、立即更新及背景分頁暫停行為。
 
@@ -98,11 +102,97 @@ npx wrangler dev
 4. 部署完成後開啟 `https://你的-worker.workers.dev/api/stocks?code=2330`。若回傳成功 JSON，而不是 HTML 或 404，即代表 Worker API 已啟用。
 5. 開啟 `https://你的-worker.workers.dev/`，確認原本的靜態網站仍能正常顯示及操作。
 
-## IndexedDB 注意事項
+## 本機資料與 Firestore 注意事項
 
-加入的股票只儲存在目前瀏覽器、目前裝置及目前網站網域的 IndexedDB 中，不會同步到其他瀏覽器或裝置。無痕模式可能不會長期保留資料；清除瀏覽器網站資料、重設瀏覽器或移除該網站的儲存空間，都可能造成資料遺失。
+登入後的股票、排序與股息以 Firestore 為唯一正式資料來源。既有 IndexedDB 與 `stock-trading-journal-watchlist-v1` localStorage 僅供第一次匯入；匯入完成後不會自動刪除，方便使用者自行確認或備份。舊版股息 localStorage 也不會被程式自動刪除。
 
-自選股只儲存在 localStorage，不包含登入或跨裝置同步；交易紀錄仍沿用原有 IndexedDB。第一版只依台灣時間的星期與 09:00～13:30 判斷交易時段，不另外判斷國定假日。
+即時行情仍只在畫面記憶體中更新，不寫入 Firestore；第一版只依台灣時間的星期與 09:00～13:30 判斷交易時段，不另外判斷國定假日。
 
-股息資料儲存在 localStorage 的 `stock-trading-journal-dividends-v1`，自訂順序儲存在 `stock-trading-journal-dividend-order-v1`。兩者都只存在目前瀏覽器與網域；從股票或自選股清單移除股票時，不會自動刪除該代號的歷史股息。
+## Firebase 登入與雲端資料
 
+前端以 Firebase Web SDK `12.16.0` 的 CDN ES Module 載入，不需要 npm、Vite 或其他建置工具。Firebase 初始化集中在 `firebase-config.js`；Google 登入流程在 `auth.js`；Firestore、驗證、CSV 與批次寫入集中在 `firebase-service.js`。
+
+Firebase Web API key 是可公開的專案識別資訊。Repository 不得加入 Google 密碼、Service Account 私鑰、OAuth Client Secret、GitHub Token 或其他真正的私密憑證。
+
+登入後的資料路徑：
+
+```text
+users/{uid}/stocks/{stockCode}
+users/{uid}/stocks/{stockCode}/dividends/{year}
+```
+
+股票文件只包含：
+
+```text
+stockCode, stockName, sortOrder, createdAt, updatedAt
+```
+
+股息文件只包含：
+
+```text
+year, amount, note, createdAt, updatedAt
+```
+
+股息文件 ID 直接使用年度字串。同一股票同一年度只會有一筆；手動上移、下移會使用 Firestore batch write 更新全部 `sortOrder`。
+
+### 發布 Firestore Security Rules
+
+Repository 根目錄的 `firestore.rules` 是可直接發布的完整規則。操作步驟：
+
+1. 開啟 Firebase Console。
+2. 選擇 `stock-dividend-tracker`。
+3. 進入「Firestore Database」→「規則」。
+4. 將 `firestore.rules` 全部內容貼入編輯器。
+5. 按「發布」。
+
+規則要求登入、限制使用者只能存取自己的 UID 路徑、驗證文件欄位／型態／數值範圍與 timestamp，並禁止額外欄位。未發布規則前，前端可能顯示 `permission-denied`。
+
+### Google 登入與取得 UID
+
+1. 確認 Firebase Authentication 已啟用 Google provider。
+2. 確認 `lws621022.github.io` 已加入 Authorized domains。
+3. 開啟網站並按「使用 Google 帳號登入」。
+4. 登入後，頁首會顯示名稱、電子郵件及 UID。
+5. 重新開啟同一瀏覽器，local persistence 通常會保留登入狀態。
+6. 按「登出」後，股票、行情與股息畫面會立即隱藏並清空。
+
+若要限制成指定 UID，將 `auth.js` 的 `ALLOWED_UID` 填入頁首顯示的 UID，並將 `firestore.rules` 的 `ownsUser` 增加相同 UID 判斷後重新發布。前端限制只改善介面；真正的安全邊界仍以 Firestore Rules 為準。
+
+### 匯入既有本機股票
+
+第一次登入且 Firestore 沒有股票時，首頁會檢查：
+
+- IndexedDB `my-taiwan-stock-database / stocks`
+- localStorage `stock-trading-journal-watchlist-v1`
+- localStorage `stock-trading-journal-dividends-v1` 中的有效歷史股息
+
+若找到使用者自行加入的股票，會顯示「將目前股票匯入 Firebase」。確認後以股票代碼、股息年度去重，顯示成功、略過及失敗筆數；原 IndexedDB 與 localStorage 不會刪除。空的 `sample-data.js` 不會被匯入。
+
+### CSV 備份與還原
+
+首頁的「匯出 CSV」會下載 UTF-8 BOM 檔案，欄位固定為：
+
+```text
+stock_code,stock_name,year,dividend,note,sort_order
+```
+
+「匯入 CSV」會先檢查欄位與每列資料，確認後才寫入。相同股票代碼與年度會更新原文件，不會建立重複年度；資料以每批最多 400 次寫入自動分批，並顯示新增、更新、略過與錯誤筆數。
+
+### GitHub Pages
+
+Firebase 檔案都是瀏覽器原生 ES Module，可直接由 GitHub Pages 提供，不需要建置步驟。推送／合併後仍依既有 GitHub Pages 設定發布至 `https://lws621022.github.io/`。Repository 同時保留 `worker.js` 與 `wrangler.jsonc`，因原本的股票查詢及即時行情仍依賴 `/api/stocks`；Firebase 不取代行情 API。
+
+### Firebase 人工驗收
+
+實際 Firebase 專案與 Google 彈出視窗需在部署網域人工確認：
+
+- 未登入只顯示登入區塊
+- Google 登入、取消、彈出視窗封鎖、未授權網域與登出
+- 重新開啟瀏覽器後的登入 persistence
+- 新增／刪除股票及跨裝置同步
+- 即時行情與 15 秒交易時段更新
+- 股息新增、編輯、刪除、同年度防重複與重新載入
+- 指定年度、累積股息與自訂順序
+- CSV 中文匯出及分批匯入
+- 未登入與其他 UID 的 Firestore Rules 拒絕測試
+- 桌面、平板與手機版面
