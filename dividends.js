@@ -125,7 +125,7 @@
     for (let year = current + 1; year >= current - 10; year -= 1) years.add(year);
     Object.values(state.data).forEach((entry) => recordsOf(entry).forEach((record) => years.add(record.year)));
     el.yearFilter.innerHTML = Array.from(years).sort((a, b) => b - a)
-      .map((year) => \`<option value="\${year}">\${year} 年</option>\`).join("");
+      .map((year) => `<option value="${year}">${year} 年</option>`).join("");
     el.yearFilter.value = String(years.has(selected) ? selected : current);
   }
 
@@ -163,20 +163,20 @@
       const latest = items[0];
       const annual = items.find((record) => record.year === selectedYear);
       const position = currentOrder.indexOf(stock.code);
-      return \`
+      return `
         <tr>
-          <td data-label="股票代碼"><strong>\${escape(stock.code)}</strong></td>
-          <td data-label="股票名稱">\${escape(stock.name)}</td>
-          <td data-label="最近年度股息">\${latest ? \`\${latest.year} 年：\${format(latest.amount)} 元\` : '<span class="muted">尚無資料</span>'}</td>
-          <td data-label="指定年度股息">\${annual ? \`\${format(annual.amount)} 元\` : '<span class="muted">尚無資料</span>'}</td>
-          <td data-label="累積股息"><strong>\${format(total(items))} 元</strong></td>
-          <td data-label="紀錄筆數">\${items.length}</td>
+          <td data-label="股票代碼"><strong>${escape(stock.code)}</strong></td>
+          <td data-label="股票名稱">${escape(stock.name)}</td>
+          <td data-label="最近年度股息">${latest ? `${latest.year} 年：${format(latest.amount)} 元` : '<span class="muted">尚無資料</span>'}</td>
+          <td data-label="指定年度股息">${annual ? `${format(annual.amount)} 元` : '<span class="muted">尚無資料</span>'}</td>
+          <td data-label="累積股息"><strong>${format(total(items))} 元</strong></td>
+          <td data-label="紀錄筆數">${items.length}</td>
           <td data-label="操作" class="dividend-actions">
-            <button type="button" class="secondary-btn compact-btn" data-action="open" data-code="\${escape(stock.code)}">查看／編輯</button>
-            <button type="button" class="icon-btn order-btn" data-action="up" data-code="\${escape(stock.code)}" aria-label="上移 \${escape(stock.code)}" \${position <= 0 ? "disabled" : ""}>↑</button>
-            <button type="button" class="icon-btn order-btn" data-action="down" data-code="\${escape(stock.code)}" aria-label="下移 \${escape(stock.code)}" \${position < 0 || position >= currentOrder.length - 1 ? "disabled" : ""}>↓</button>
+            <button type="button" class="secondary-btn compact-btn" data-action="open" data-code="${escape(stock.code)}">查看／編輯</button>
+            <button type="button" class="icon-btn order-btn" data-action="up" data-code="${escape(stock.code)}" aria-label="上移 ${escape(stock.code)}" ${position <= 0 ? "disabled" : ""}>↑</button>
+            <button type="button" class="icon-btn order-btn" data-action="down" data-code="${escape(stock.code)}" aria-label="下移 ${escape(stock.code)}" ${position < 0 || position >= currentOrder.length - 1 ? "disabled" : ""}>↓</button>
           </td>
-        </tr>\`;
+        </tr>`;
     }).join("");
   }
 
@@ -238,7 +238,7 @@
     const stock = state.stocks.find((item) => item.code === code);
     if (!stock) return;
     state.code = code;
-    el.title.textContent = \`\${code} \${stock.name}－股息紀錄\`;
+    el.title.textContent = `${code} ${stock.name}－股息紀錄`;
     resetForm();
     renderRecords();
     if (typeof el.dialog.showModal === "function") el.dialog.showModal();
@@ -269,7 +269,7 @@
     const maxYear = new Date().getFullYear() + 1;
     if (!yearText || !amountText) return message(el.dialogMessage, "請填寫年度與每股股息金額。", "error");
     if (!Number.isInteger(year) || year < 1900 || year > maxYear) {
-      return message(el.dialogMessage, \`年度必須是 1900～\${maxYear} 的整數。`, "error");
+      return message(el.dialogMessage, `年度必須是 1900～${maxYear} 的整數。`, "error");
     }
     if (!Number.isFinite(amount) || amount < 0) {
       return message(el.dialogMessage, "每股股息必須是大於或等於 0 的數字。", "error");
@@ -281,7 +281,7 @@
       ? items.findIndex((item) => item.year === originalYear) : -1;
     const duplicateIndex = items.findIndex((item) => item.year === year);
     if (duplicateIndex >= 0 && duplicateIndex !== editIndex) {
-      if (!window.confirm(\`\${state.code} 已有 \${year} 年紀錄，是否更新原有紀錄？\`)) {
+      if (!window.confirm(`${state.code} 已有 ${year} 年紀錄，是否更新原有紀錄？`)) {
         return message(el.dialogMessage, "已取消，未建立重複年度紀錄。", "error");
       }
     }
@@ -298,7 +298,7 @@
     };
     if (!write(DATA_KEY, state.data, el.dialogMessage)) return;
     resetForm();
-    message(el.dialogMessage, \`已儲存 \${year} 年股息紀錄。`, "success");
+    message(el.dialogMessage, `已儲存 ${year} 年股息紀錄。`, "success");
     fillYears();
     renderRecords();
     renderList();
@@ -307,17 +307,17 @@
   function renderRecords() {
     const items = records(state.code);
     el.recordsEmpty.hidden = items.length > 0;
-    el.records.innerHTML = items.map((record) => \`
+    el.records.innerHTML = items.map((record) => `
       <tr>
-        <td data-label="年度">\${record.year} 年</td>
-        <td data-label="每股股息">\${format(record.amount)} 元</td>
-        <td data-label="備註">\${record.note ? escape(record.note) : '<span class="muted">—</span>'}</td>
+        <td data-label="年度">${record.year} 年</td>
+        <td data-label="每股股息">${format(record.amount)} 元</td>
+        <td data-label="備註">${record.note ? escape(record.note) : '<span class="muted">—</span>'}</td>
         <td data-label="操作" class="dividend-actions">
-          <button type="button" class="secondary-btn compact-btn" data-record-action="edit" data-year="\${record.year}">編輯</button>
-          <button type="button" class="danger-btn compact-btn" data-record-action="delete" data-year="\${record.year}">刪除</button>
+          <button type="button" class="secondary-btn compact-btn" data-record-action="edit" data-year="${record.year}">編輯</button>
+          <button type="button" class="danger-btn compact-btn" data-record-action="delete" data-year="${record.year}">刪除</button>
         </td>
-      </tr>\`).join("");
-    el.total.textContent = \`\${format(total(items))} 元\`;
+      </tr>`).join("");
+    el.total.textContent = `${format(total(items))} 元`;
   }
 
   function onRecordAction(event) {
@@ -333,20 +333,20 @@
       el.note.value = record.note;
       el.submit.textContent = "儲存修改";
       el.cancel.hidden = false;
-      message(el.dialogMessage, \`正在編輯 \${year} 年紀錄。`, "success");
+      message(el.dialogMessage, `正在編輯 ${year} 年紀錄。`, "success");
       el.year.focus();
     }
     if (button.dataset.recordAction === "delete") deleteRecord(year);
   }
 
   function deleteRecord(year) {
-    if (!window.confirm(\`確定刪除 \${state.code} 的 \${year} 年股息紀錄嗎？此操作無法復原。\`)) return;
+    if (!window.confirm(`確定刪除 ${state.code} 的 ${year} 年股息紀錄嗎？此操作無法復原。`)) return;
     const entry = state.data[state.code];
     if (!entry) return;
     entry.dividends = records(state.code).filter((record) => record.year !== year);
     if (!write(DATA_KEY, state.data, el.dialogMessage)) return;
     resetForm();
-    message(el.dialogMessage, \`已刪除 \${year} 年股息紀錄。`, "success");
+    message(el.dialogMessage, `已刪除 ${year} 年股息紀錄。`, "success");
     fillYears();
     renderRecords();
     renderList();
@@ -355,7 +355,7 @@
   function message(target, text, type = "") {
     if (!target) return;
     target.textContent = text;
-    target.className = \`form-message \${type}\`.trim();
+    target.className = `form-message ${type}`.trim();
     target.hidden = !text;
   }
 
