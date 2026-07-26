@@ -1,6 +1,5 @@
-// 自選股使用 localStorage，與原有 IndexedDB 個股資料完全分開。
+
 document.addEventListener("DOMContentLoaded", () => {
-  const STORAGE_KEY = "stock-trading-journal-watchlist-v1";
   const MAX_STOCKS = 50;
   const REFRESH_INTERVAL = 15_000;
   const page = document.querySelector("#watchlist-page");
@@ -15,49 +14,52 @@ document.addEventListener("DOMContentLoaded", () => {
   const marketStatus = document.querySelector("#market-status");
   const updatedAt = document.querySelector("#watchlist-updated-at");
 
-  let entries = loadEntries();
+  let uid = "";
+  let service = null;
+  let entries = [];
   let active = false;
   let isUpdating = false;
+  let isSavingOrder = false;
   let refreshTimer = null;
   let marketTimer = null;
   let messageTimer = null;
   let tradingState = null;
 
-  function loadEntries() {
-    try {
-      const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-      if (!Array.isArray(value)) return [];
-      return value.slice(0, MAX_STOCKS).filter((item) => item && typeof item.code === "string").map((item) => ({
-        code: item.code.trim().toUpperCase(),
-        name: String(item.name || item.code),
-        addedAt: item.addedAt || new Date().toISOString(),
-        quote: item.quote && typeof item.quote === "object" ? item.quote : null,
-        failed: false
-      })).filter((item, index, list) => item.code && list.findIndex((other) => other.code === item.code) === index);
-    } catch (error) {
-      console.warn("自選股 localStorage 內容無法解析", error);
-      return [];
-    }
-  }
-
-  function saveEntries() {
-    try {
-      const value = entries.map(({ code, name, addedAt, quote }) => ({ code, name, addedAt, quote }));
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
-      return true;
-    } catch (error) {
-      console.error("自選股無法寫入 localStorage", error);
-      showMessage("瀏覽器無法儲存自選股，請確認未停用網站儲存空間。", "error");
-      return false;
-    }
-  }
-
   function showMessage(text, type = "success", autoHide = false) {
     clearTimeout(messageTimer);
     message.textContent = text;
     message.className = `message ${type}`;
-    message.hidden = false;
-    if (autoHide) messageTimer = setTimeout(() => { message.hidden = true; }, 4000);
+    message.hidden = !text;
+    if (text && autoHide) messageTimer = setTimeout(() => { message.hidden = true; }, 4000);
+  }
+
+  function friendlyError(error, fallback) {
+    return service?.getFriendlyError(error, fallback) || error?.message || fallback;
+  }
+
+  async function loadEntries() {
+    if (!uid || !service) {
+      entries = [];
+      render();
+      return;
+    }
+    const previous = new Map(entries.map((entry) => [entry.code, entry]));
+    try {
+      const stocks = await service.getStocks(uid);
+      entries = stocks.map((stock) => {
+        const old = previous.get(stock.stockCode);
+        return {
+          code: stock.stockCode,
+          name: stock.stockName,
+          sortOrder: stock.sortOrder,
+          quote: old?.quote || null,
+          failed: old?.failed || false
+        };
+      });
+      render();
+    } catch (error) {
+      showMessage(friendlyError(error, "無法載入 Firebase 自選股。"), "error");
+    }
   }
 
   function getSortedEntries() {
@@ -68,13 +70,16 @@ document.addEventListener("DOMContentLoaded", () => {
       result.sort((a, b) => getChangePercent(b) - getChangePercent(a));
     } else if (sortSelect.value === "change-asc") {
       result.sort((a, b) => getChangePercent(a) - getChangePercent(b));
+    } else {
+      result.sort((a, b) => a.sortOrder - b.sortOrder);
     }
     return result;
   }
 
   function getChangePercent(entry) {
     const value = toFiniteNumber(entry.quote?.changePercent);
-    return value !== null ? value : sortSelect.value === "change-asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+    return value !== null ? value
+      : sortSelect.value === "change-asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
   }
 
   function render() {
@@ -84,8 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
     emptyState.hidden = sortedEntries.length > 0;
     if (!sortedEntries.length) return;
 
-    sortedEntries.forEach((entry) => {
-      const originalIndex = entries.findIndex((item) => item.code === entry.code);
+    sortedEntries.forEach((entry, displayIndex) => {
       const quote = entry.quote || {};
       const directionClass = getDirectionClass(quote.change);
       const row = document.createElement("tr");
@@ -101,11 +105,16 @@ document.addEventListener("DOMContentLoaded", () => {
         <td data-label="今日最低價">${formatPrice(quote.low)}</td>
         <td data-label="昨日收盤價">${formatPrice(quote.previousClose)}</td>
         <td data-label="成交量">${formatVolume(quote.volume)}</td>
-        <td data-label="行情時間">${escapeHtml(formatQuoteTime(quote.updatedAt))}${entry.failed ? '<span class="quote-error">更新失敗</span>' : ""}</td>
+        <td data-label="行情時間">${escapeHtml(formatQuoteTime(quote.updatedAt))}
+          ${entry.failed ? '<span class="quote-error">更新失敗</span>' : ""}</td>
         <td data-label="操作">
           <div class="row-actions">
-            <button class="order-button" type="button" data-action="up" title="上移" aria-label="${escapeHtml(entry.name)}上移" ${!manualSort || originalIndex === 0 ? "disabled" : ""}>↑</button>
-            <button class="order-button" type="button" data-action="down" title="下移" aria-label="${escapeHtml(entry.name)}下移" ${!manualSort || originalIndex === entries.length - 1 ? "disabled" : ""}>↓</button>
+            <button class="order-button" type="button" data-action="up" title="上移"
+              aria-label="${escapeHtml(entry.name)}上移"
+              ${!manualSort || displayIndex === 0 || isSavingOrder ? "disabled" : ""}>↑</button>
+            <button class="order-button" type="button" data-action="down" title="下移"
+              aria-label="${escapeHtml(entry.name)}下移"
+              ${!manualSort || displayIndex === sortedEntries.length - 1 || isSavingOrder ? "disabled" : ""}>↓</button>
             <button class="watchlist-delete" type="button" data-action="delete">刪除</button>
           </div>
         </td>`;
@@ -115,30 +124,56 @@ document.addEventListener("DOMContentLoaded", () => {
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (!uid || !service) {
+      showMessage("請先登入後再新增股票。", "error");
+      return;
+    }
     const code = codeInput.value.trim().toUpperCase();
     codeInput.value = code;
-    if (!code) { showMessage("請輸入股票代號。", "error"); codeInput.focus(); return; }
-    if (!/^[0-9A-Z]{4,10}$/.test(code)) { showMessage("股票代號格式不正確，請輸入 4～10 位英數字。", "error"); return; }
-    if (entries.some((entry) => entry.code === code)) { showMessage("此股票已在自選股清單中，無法重複新增。", "warning"); return; }
-    if (entries.length >= MAX_STOCKS) { showMessage("自選股已達 50 支上限，請先刪除其他股票。", "warning"); return; }
+    if (!code) {
+      showMessage("請輸入股票代號。", "error");
+      codeInput.focus();
+      return;
+    }
+    if (!/^[0-9A-Z.-]{1,10}$/.test(code)) {
+      showMessage("股票代號格式不正確，請輸入 1～10 位英數字。", "error");
+      return;
+    }
+    if (entries.some((entry) => entry.code === code)) {
+      showMessage("此股票已在 Firebase 自選股中，無法重複新增。", "warning");
+      return;
+    }
+    if (entries.length >= MAX_STOCKS) {
+      showMessage("自選股已達 50 支上限，請先刪除其他股票。", "warning");
+      return;
+    }
 
     setAdding(true);
     showMessage("正在確認股票代號與行情…", "warning");
     try {
       const result = await StockAPI.getQuotes([code], true);
       const quote = result.stocks.find((stock) => stock.stockCode === code);
-      if (!quote) { showMessage("查無此股票代號，或目前無法取得該股票資料。", "error"); return; }
-      const entry = { code, name: quote.stockName || code, addedAt: new Date().toISOString(), quote, failed: false };
-      entries.push(entry);
-      if (!saveEntries()) { entries.pop(); return; }
+      if (!quote) {
+        showMessage("查無此股票代號，或目前無法取得該股票資料。", "error");
+        return;
+      }
+      const sortOrder = entries.reduce((max, entry) => Math.max(max, entry.sortOrder || 0), 0) + 1;
+      await service.saveStock(uid, {
+        stockCode: code,
+        stockName: quote.stockName || code,
+        sortOrder
+      });
       codeInput.value = "";
+      await loadEntries();
+      const entry = entries.find((item) => item.code === code);
+      if (entry) entry.quote = quote;
       render();
       setUpdatedAt();
-      showMessage(`${entry.code} ${entry.name} 已加入自選股。`, "success", true);
+      showMessage(`${code} ${quote.stockName || code} 已加入 Firebase 自選股。`, "success", true);
       codeInput.focus();
     } catch (error) {
       console.warn("新增自選股失敗", error);
-      showMessage(getNetworkErrorMessage(error, "新增股票失敗"), "error");
+      showMessage(friendlyError(error, "新增股票失敗，請稍後再試。"), "error");
     } finally {
       setAdding(false);
     }
@@ -151,7 +186,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function refreshQuotes(reason = "manual") {
-    if (isUpdating || !entries.length) {
+    if (isUpdating || !entries.length || !uid) {
       if (!entries.length && reason === "manual") showMessage("目前沒有可更新的自選股。", "warning", true);
       scheduleRefresh();
       return;
@@ -177,7 +212,6 @@ document.addEventListener("DOMContentLoaded", () => {
           failedSet.add(entry.code);
         }
       });
-      saveEntries();
       render();
       if (quoteMap.size) setUpdatedAt();
 
@@ -236,7 +270,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function scheduleRefresh() {
     clearRefreshTimer();
-    if (active && !document.hidden && updateMarketStatus() && entries.length) {
+    if (active && uid && !document.hidden && updateMarketStatus() && entries.length) {
       refreshTimer = setTimeout(() => refreshQuotes("auto"), REFRESH_INTERVAL);
     }
   }
@@ -246,10 +280,11 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshTimer = null;
   }
 
-  function activate() {
+  async function activate() {
+    if (!uid) return;
     active = true;
     tradingState = updateMarketStatus();
-    render();
+    await loadEntries();
     clearInterval(marketTimer);
     marketTimer = setInterval(() => {
       const nextState = updateMarketStatus();
@@ -272,33 +307,70 @@ document.addEventListener("DOMContentLoaded", () => {
 
   refreshButton.addEventListener("click", () => refreshQuotes("manual"));
   sortSelect.addEventListener("change", render);
-  tableBody.addEventListener("click", (event) => {
+  tableBody.addEventListener("click", async (event) => {
     const button = event.target.closest("button[data-action]");
     const row = event.target.closest("tr[data-code]");
-    if (!button || !row) return;
-    const index = entries.findIndex((entry) => entry.code === row.dataset.code);
+    if (!button || !row || !uid || !service) return;
+    const manualEntries = [...entries].sort((a, b) => a.sortOrder - b.sortOrder);
+    const index = manualEntries.findIndex((entry) => entry.code === row.dataset.code);
     if (index < 0) return;
 
     if (button.dataset.action === "delete") {
-      if (!window.confirm(`確定要從自選股刪除「${entries[index].code} ${entries[index].name}」嗎？`)) return;
-      const [removed] = entries.splice(index, 1);
-      if (!saveEntries()) { entries.splice(index, 0, removed); return; }
-      render();
-      showMessage("已從自選股刪除股票。", "success", true);
-      scheduleRefresh();
+      if (!window.confirm(`確定要從 Firebase 自選股刪除「${manualEntries[index].code} ${manualEntries[index].name}」嗎？`)) return;
+      button.disabled = true;
+      try {
+        await service.deleteStock(uid, manualEntries[index].code);
+        await loadEntries();
+        showMessage("已從 Firebase 自選股刪除股票。", "success", true);
+        scheduleRefresh();
+      } catch (error) {
+        showMessage(friendlyError(error, "刪除股票失敗。"), "error");
+        button.disabled = false;
+      }
       return;
     }
 
     const targetIndex = button.dataset.action === "up" ? index - 1 : index + 1;
-    if (sortSelect.value !== "manual" || targetIndex < 0 || targetIndex >= entries.length) return;
-    [entries[index], entries[targetIndex]] = [entries[targetIndex], entries[index]];
-    saveEntries();
+    if (sortSelect.value !== "manual" || targetIndex < 0 || targetIndex >= manualEntries.length) return;
+    [manualEntries[index], manualEntries[targetIndex]] = [manualEntries[targetIndex], manualEntries[index]];
+    isSavingOrder = true;
     render();
+    try {
+      await service.updateStockOrder(uid, manualEntries.map((entry) => entry.code));
+      manualEntries.forEach((entry, orderIndex) => { entry.sortOrder = orderIndex + 1; });
+      entries = manualEntries;
+      showMessage("自訂順序已同步至 Firebase。", "success", true);
+    } catch (error) {
+      showMessage(friendlyError(error, "自訂順序儲存失敗。"), "error");
+      await loadEntries();
+    } finally {
+      isSavingOrder = false;
+      render();
+    }
   });
 
   document.addEventListener("app:pagechange", (event) => {
     if (event.detail?.pageId === page.id) activate();
     else if (active) deactivate();
+  });
+
+  document.addEventListener("firebase:authchange", async (event) => {
+    uid = event.detail?.user?.uid || "";
+    service = event.detail?.service || window.FirebaseService || null;
+    entries = [];
+    updatedAt.textContent = "尚未更新";
+    showMessage("");
+    if (!uid) {
+      deactivate();
+      render();
+      return;
+    }
+    await loadEntries();
+  });
+
+  document.addEventListener("firebase:datachange", (event) => {
+    if (!uid || !["stocks", "stocks-order", "import"].includes(event.detail?.type)) return;
+    loadEntries();
   });
 
   document.addEventListener("visibilitychange", () => {
@@ -340,7 +412,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return number !== null ? Math.round(number).toLocaleString("zh-TW") : "—";
   }
 
-  // 上方最後更新保留完整日期；每檔行情只顯示官方回傳的時間。
   function formatQuoteTime(value) {
     const match = String(value ?? "").match(/(\d{2}:\d{2}:\d{2})/);
     return match?.[1] || "—";
@@ -358,6 +429,11 @@ document.addEventListener("DOMContentLoaded", () => {
     return div.innerHTML;
   }
 
+  if (window.FirebaseAuthState?.ready && window.FirebaseAuthState.user) {
+    uid = window.FirebaseAuthState.user.uid;
+    service = window.FirebaseService;
+    loadEntries();
+  }
   render();
   updateMarketStatus();
 });
