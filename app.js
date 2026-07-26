@@ -307,7 +307,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (await service.getStock(uid, stock.stockCode)) {
           stats.skipped += 1;
         } else {
-          await service.saveStock(uid, stock);
+          await service.saveStock(uid, stock, { notify: false });
           stats.success += 1;
         }
       } catch (error) {
@@ -316,6 +316,9 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
+    if (stats.success) {
+      document.dispatchEvent(new CustomEvent("firebase:datachange", { detail: { type: "import" } }));
+    }
     setMessage(cloudToolsMessage,
       `本機股票匯入完成：成功 ${stats.success}、略過 ${stats.skipped}、失敗 ${stats.failed}。`,
       stats.failed ? "warning" : "success");
