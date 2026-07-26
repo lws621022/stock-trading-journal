@@ -81,7 +81,7 @@ npx wrangler dev
 - `/api/stocks?code=9999`（應回傳 404）
 - `/api/stocks?realtime=1&codes=2330,2317,0050`（批次即時行情）
 
-看到 HTTP 200 且 JSON 包含 `"success": true` 與股票資料，即代表 Function 已啟用。網站中也應能重新載入官方收盤資料；重新整理頁面後，IndexedDB 中已加入的股票仍會存在。
+看到 HTTP 200 且 JSON 包含 `"success": true` 與股票資料，即代表 Function 已啟用。網站中也應能重新載入官方收盤資料；登入後，重新整理頁面仍會從 Firestore 載入已加入的股票。
 
 即時看盤另應確認 2330、2317、0050 可新增且重新整理後仍存在；重複代號與無效代號會顯示錯誤；刪除後重新整理不會復原。手機寬度下每檔股票會改為卡片，交易時段可觀察 15 秒更新、立即更新及背景分頁暫停行為。
 
@@ -102,13 +102,11 @@ npx wrangler dev
 4. 部署完成後開啟 `https://你的-worker.workers.dev/api/stocks?code=2330`。若回傳成功 JSON，而不是 HTML 或 404，即代表 Worker API 已啟用。
 5. 開啟 `https://你的-worker.workers.dev/`，確認原本的靜態網站仍能正常顯示及操作。
 
-## IndexedDB 注意事項
+## 本機資料與 Firestore 注意事項
 
-加入的股票只儲存在目前瀏覽器、目前裝置及目前網站網域的 IndexedDB 中，不會同步到其他瀏覽器或裝置。無痕模式可能不會長期保留資料；清除瀏覽器網站資料、重設瀏覽器或移除該網站的儲存空間，都可能造成資料遺失。
+登入後的股票、排序與股息以 Firestore 為唯一正式資料來源。既有 IndexedDB 與 `stock-trading-journal-watchlist-v1` localStorage 僅供第一次匯入；匯入完成後不會自動刪除，方便使用者自行確認或備份。舊版股息 localStorage 也不會被程式自動刪除。
 
-自選股只儲存在 localStorage，不包含登入或跨裝置同步；交易紀錄仍沿用原有 IndexedDB。第一版只依台灣時間的星期與 09:00～13:30 判斷交易時段，不另外判斷國定假日。
-
-股息資料儲存在 localStorage 的 `stock-trading-journal-dividends-v1`，自訂順序儲存在 `stock-trading-journal-dividend-order-v1`。兩者都只存在目前瀏覽器與網域；從股票或自選股清單移除股票時，不會自動刪除該代號的歷史股息。
+即時行情仍只在畫面記憶體中更新，不寫入 Firestore；第一版只依台灣時間的星期與 09:00～13:30 判斷交易時段，不另外判斷國定假日。
 
 ## Firebase 登入與雲端資料
 
