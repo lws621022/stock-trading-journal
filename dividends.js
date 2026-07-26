@@ -157,11 +157,12 @@
     const stocks = sortedStocks();
     el.empty.hidden = stocks.length > 0;
     const selectedYear = Number(el.yearFilter.value);
+    const currentOrder = state.order.filter((code) => state.stocks.some((stock) => stock.code === code));
     el.body.innerHTML = stocks.map((stock) => {
       const items = records(stock.code);
       const latest = items[0];
       const annual = items.find((record) => record.year === selectedYear);
-      const position = state.order.indexOf(stock.code);
+      const position = currentOrder.indexOf(stock.code);
       return \`
         <tr>
           <td data-label="股票代碼"><strong>\${escape(stock.code)}</strong></td>
@@ -173,7 +174,7 @@
           <td data-label="操作" class="dividend-actions">
             <button type="button" class="secondary-btn compact-btn" data-action="open" data-code="\${escape(stock.code)}">查看／編輯</button>
             <button type="button" class="icon-btn order-btn" data-action="up" data-code="\${escape(stock.code)}" aria-label="上移 \${escape(stock.code)}" \${position <= 0 ? "disabled" : ""}>↑</button>
-            <button type="button" class="icon-btn order-btn" data-action="down" data-code="\${escape(stock.code)}" aria-label="下移 \${escape(stock.code)}" \${position < 0 || position >= state.stocks.length - 1 ? "disabled" : ""}>↓</button>
+            <button type="button" class="icon-btn order-btn" data-action="down" data-code="\${escape(stock.code)}" aria-label="下移 \${escape(stock.code)}" \${position < 0 || position >= currentOrder.length - 1 ? "disabled" : ""}>↓</button>
           </td>
         </tr>\`;
     }).join("");
@@ -221,7 +222,7 @@
   }
 
   function move(code, direction) {
-    const visible = state.stocks.map((stock) => stock.code);
+    const visible = state.order.filter((item) => state.stocks.some((stock) => stock.code === item));
     const targetCode = visible[visible.indexOf(code) + direction];
     if (!targetCode) return;
     const from = state.order.indexOf(code), to = state.order.indexOf(targetCode);
