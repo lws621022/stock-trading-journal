@@ -1,12 +1,14 @@
-
 document.addEventListener("DOMContentLoaded", () => {
+  "use strict";
+
+  const MAX_STOCKS = 50;
   const pages = [...document.querySelectorAll(".page")];
   const globalMessage = document.querySelector("#global-message");
-  const searchForm = document.querySelector("#stock-search-form");
+  const stockForm = document.querySelector("#stock-form");
   const stockCodeInput = document.querySelector("#stock-code");
-  const searchMessage = document.querySelector("#search-message");
-  const searchResult = document.querySelector("#search-result");
-  const searchButton = searchForm.querySelector('button[type="submit"]');
+  const stockNameInput = document.querySelector("#stock-name");
+  const stockSubmit = document.querySelector("#stock-submit");
+  const stockFormMessage = document.querySelector("#stock-form-message");
   const stockFilter = document.querySelector("#stock-filter");
   const tableBody = document.querySelector("#stock-table-body");
   const emptyState = document.querySelector("#empty-state");
@@ -20,30 +22,24 @@ document.addEventListener("DOMContentLoaded", () => {
   let uid = "";
   let service = null;
   let savedStocks = [];
-  let pendingStock = null;
-  let marketData = new Map();
-  let messageTimer;
   let localStocksCache = [];
   let localDividendsCache = [];
+  let reordering = false;
+  const messageTimers = new WeakMap();
 
   function setMessage(element, text, type = "success", autoHide = false) {
     if (!element) return;
-    clearTimeout(messageTimer);
+    clearTimeout(messageTimers.get(element));
     element.textContent = text;
     element.className = `message ${type}`;
     element.hidden = !text;
-    if (text && autoHide) messageTimer = setTimeout(() => { element.hidden = true; }, 4500);
+    if (text && autoHide) {
+      messageTimers.set(element, setTimeout(() => { element.hidden = true; }, 4500));
+    }
   }
 
   function friendlyError(error, fallback) {
     return service?.getFriendlyError(error, fallback) || error?.message || fallback;
-  }
-
-  function clearSearchArea() {
-    pendingStock = null;
-    searchMessage.hidden = true;
-    searchResult.hidden = true;
-    searchResult.replaceChildren();
   }
 
   async function showPage(pageId) {
@@ -54,9 +50,11 @@ document.addEventListener("DOMContentLoaded", () => {
       page.hidden = !active;
     });
     document.dispatchEvent(new CustomEvent("app:pagechange", { detail: { pageId } }));
-    globalMessage.hidden = true;
+    setMessage(globalMessage, "");
+
     if (pageId === "add-page") {
-      clearSearchArea();
+      stockForm.reset();
+      setMessage(stockFormMessage, "");
       stockCodeInput.focus();
     }
     if (pageId === "list-page") {
@@ -70,189 +68,186 @@ document.addEventListener("DOMContentLoaded", () => {
     button.addEventListener("click", () => showPage(button.dataset.page));
   });
 
-  searchForm.addEventListener("submit", async (event) => {
+  function setStockSaving(saving) {
+    stockCodeInput.disabled = saving;
+    stockNameInput.disabled = saving;
+    stockSubmit.disabled = saving;
+    stockSubmit.textContent = saving ? "儲存中…" : "新增股票";
+  }
+
+  stockForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!uid || !service) return;
-    clearSearchArea();
+
     const stockCode = stockCodeInput.value.trim().toUpperCase();
+    const stockName = stockNameInput.value.trim();
     stockCodeInput.value = stockCode;
-    if (!stockCode) {
-      setMessage(searchMessage, "請輸入股票代號", "error");
-      stockCodeInput.focus();
+    stockNameInput.value = stockName;
+
+    let validatedInput;
+    try {
+      // 先在前端驗證，錯誤資料不會送往 Firestore。
+      validatedInput = service.validateStock({ stockCode, stockName, sortOrder: 0 });
+    } catch (error) {
+      setMessage(stockFormMessage, friendlyError(error, "請確認股票代碼與名稱格式。"), "error");
       return;
     }
 
+    setStockSaving(true);
+    setMessage(stockFormMessage, "正在儲存股票…", "warning");
     try {
-      if (await service.getStock(uid, stockCode)) {
-        setMessage(searchMessage, "此股票已存在於 Firebase 個股資料中", "warning");
+      const currentStocks = await service.getStocks(uid);
+      if (currentStocks.some((item) => item.stockCode === validatedInput.stockCode)) {
+        setMessage(stockFormMessage, "此股票代碼已存在於股票清單中。", "warning");
         return;
       }
-      setSearching(true);
-      setMessage(searchMessage, "資料查詢中", "warning");
-      try {
-        const result = await StockAPI.findStock(stockCode);
-        pendingStock = result.stock;
-        if (result.warnings.length) setMessage(searchMessage, result.warnings.join("；"), "warning");
-        else searchMessage.hidden = true;
-      } catch (apiError) {
-        console.warn(apiError);
-        setMessage(searchMessage, "目前無法取得官方股票資料", "error");
+      if (currentStocks.length >= MAX_STOCKS) {
+        setMessage(stockFormMessage, `股票清單最多只能儲存 ${MAX_STOCKS} 支股票。`, "error");
         return;
       }
-      if (!pendingStock) {
-        setMessage(searchMessage, "查無此股票代號", "error");
-        return;
-      }
-      renderSearchResult(pendingStock);
+
+      const sortOrder = currentStocks.reduce(
+        (max, item) => Math.max(max, Number(item.sortOrder) || 0), 0
+      ) + 1;
+      const stock = { ...validatedInput, sortOrder };
+      await service.saveStock(uid, stock);
+      stockForm.reset();
+      await loadStocks();
+      setMessage(stockFormMessage, `${stock.stockCode} ${stock.stockName} 已儲存至 Firebase。`, "success");
+      stockCodeInput.focus();
     } catch (error) {
-      console.error(error);
-      setMessage(searchMessage, friendlyError(error, "資料查詢失敗，請稍後再試。"), "error");
+      setMessage(stockFormMessage, friendlyError(error, "新增股票失敗，請稍後再試。"), "error");
     } finally {
-      setSearching(false);
+      setStockSaving(false);
     }
   });
 
-  function setSearching(isSearching) {
-    searchButton.disabled = isSearching;
-    stockCodeInput.disabled = isSearching;
-    searchButton.textContent = isSearching ? "資料查詢中" : "查詢股票";
-  }
-
-  function renderSearchResult(stock) {
-    searchResult.innerHTML = `
-      <div class="result-details">
-        <div><span>股票代號</span><strong>${escapeHtml(stock.stockCode)}</strong></div>
-        <div><span>股票名稱</span><strong>${escapeHtml(stock.stockName)}</strong></div>
-        <div><span>市場別</span><strong>${escapeHtml(stock.market)} · ${escapeHtml(stock.type)}</strong></div>
-      </div>
-      <div class="result-actions">
-        <button id="confirm-add" class="button primary" type="button">確定新增</button>
-        <button id="cancel-add" class="button secondary" type="button">取消</button>
-      </div>`;
-    searchResult.hidden = false;
-    document.querySelector("#confirm-add").addEventListener("click", confirmAddStock);
-    document.querySelector("#cancel-add").addEventListener("click", clearSearchArea);
-  }
-
-  async function confirmAddStock() {
-    if (!pendingStock || !uid || !service) return;
-    const stockToAdd = pendingStock;
-    const button = document.querySelector("#confirm-add");
-    button.disabled = true;
-    button.textContent = "儲存中…";
-    try {
-      if (await service.getStock(uid, stockToAdd.stockCode)) {
-        clearSearchArea();
-        setMessage(searchMessage, "此股票已存在於 Firebase 個股資料中", "warning");
-        return;
-      }
-      const sortOrder = savedStocks.reduce((max, stock) => Math.max(max, Number(stock.sortOrder) || 0), 0) + 1;
-      await service.saveStock(uid, {
-        stockCode: stockToAdd.stockCode,
-        stockName: stockToAdd.stockName,
-        sortOrder
-      });
-      stockCodeInput.value = "";
-      clearSearchArea();
-      setMessage(searchMessage, "股票已儲存至 Firebase", "success");
-      await loadStocks();
-      stockCodeInput.focus();
-    } catch (error) {
-      console.error(error);
-      setMessage(searchMessage, friendlyError(error, "新增失敗，請稍後再試。"), "error");
-    } finally {
-      if (button.isConnected) {
-        button.disabled = false;
-        button.textContent = "確定新增";
-      }
-    }
-  }
-
-  async function loadStocks(showReloadMessage = false, forceRefresh = false) {
+  async function loadStocks(showReloadMessage = false) {
     if (!uid || !service) return;
     try {
       savedStocks = await service.getStocks(uid);
-      marketData = new Map();
       renderStockList();
       await updateLocalImportOffer();
-      if (!savedStocks.length) return;
-      try {
-        const result = await StockAPI.getStocks(savedStocks.map((stock) => stock.stockCode), forceRefresh);
-        marketData = new Map(result.stocks.map((stock) => [stock.stockCode, stock]));
-        renderStockList();
-        const missing = savedStocks.filter((stock) => !marketData.has(stock.stockCode)).length;
-        if (result.warnings.length || missing) {
-          setMessage(globalMessage, "部分股票資料取得失敗，無法取得的股價以「—」顯示。", "warning");
-        } else if (showReloadMessage) {
-          setMessage(globalMessage, "最新收盤資料已重新載入", "success", true);
-        }
-      } catch (apiError) {
-        console.warn(apiError);
-        renderStockList();
-        setMessage(globalMessage, "目前無法取得官方股票資料", "warning");
+      if (showReloadMessage) {
+        setMessage(globalMessage, "Firebase 股票清單已重新載入。", "success", true);
       }
     } catch (error) {
-      console.error(error);
       setMessage(globalMessage, friendlyError(error, "無法讀取 Firebase 股票資料。"), "error");
     }
   }
 
   function renderStockList() {
     const keyword = stockFilter.value.trim().toLowerCase();
-    const filtered = savedStocks.filter((stock) =>
+    const ordered = [...savedStocks].sort((a, b) => a.sortOrder - b.sortOrder
+      || a.stockCode.localeCompare(b.stockCode, "zh-Hant", { numeric: true }));
+    const filtered = ordered.filter((stock) =>
       stock.stockCode.toLowerCase().includes(keyword)
       || stock.stockName.toLowerCase().includes(keyword));
+
     tableBody.replaceChildren();
     emptyState.hidden = filtered.length > 0;
     if (!filtered.length) {
       emptyState.textContent = savedStocks.length && keyword ? "找不到符合條件的股票" : "尚未新增股票";
       return;
     }
-    filtered.forEach((savedStock) => {
-      const live = marketData.get(savedStock.stockCode) || {};
+
+    filtered.forEach((stock) => {
+      const position = ordered.findIndex((item) => item.stockCode === stock.stockCode);
       const row = document.createElement("tr");
-      row.innerHTML = `<td>${escapeHtml(savedStock.stockCode)}</td>
-        <td class="stock-name">${escapeHtml(live.stockName || savedStock.stockName)}</td>
-        <td>${formatNumber(live.currentYearEps)}</td><td>${formatNumber(live.previousYearEps)}</td>
-        <td>${formatNumber(live.dividendYield, "%")}</td><td>${formatNumber(live.previousClose)}</td>
-        <td>${formatNumber(live.latestClose)}</td><td>${escapeHtml(live.updatedAt || "—")}</td>
-        <td><button class="delete-button" type="button" data-code="${escapeHtml(savedStock.stockCode)}"
-          data-name="${escapeHtml(savedStock.stockName)}">刪除</button></td>`;
+      row.innerHTML = `
+        <td data-label="股票代碼"><strong>${escapeHtml(stock.stockCode)}</strong></td>
+        <td data-label="股票名稱" class="stock-name">${escapeHtml(stock.stockName)}</td>
+        <td data-label="自訂排序">
+          <div class="stock-order-actions">
+            <span class="sort-position">第 ${position + 1} 位</span>
+            <button class="icon-btn" type="button" data-action="up" data-code="${escapeHtml(stock.stockCode)}"
+              aria-label="上移 ${escapeHtml(stock.stockCode)}" ${position === 0 || reordering ? "disabled" : ""}>↑</button>
+            <button class="icon-btn" type="button" data-action="down" data-code="${escapeHtml(stock.stockCode)}"
+              aria-label="下移 ${escapeHtml(stock.stockCode)}" ${position === ordered.length - 1 || reordering ? "disabled" : ""}>↓</button>
+          </div>
+        </td>
+        <td data-label="操作">
+          <div class="stock-row-actions">
+            <button class="secondary-btn compact-btn" type="button" data-action="dividends"
+              data-code="${escapeHtml(stock.stockCode)}">前往股息紀錄</button>
+            <button class="danger-btn compact-btn" type="button" data-action="delete"
+              data-code="${escapeHtml(stock.stockCode)}" data-name="${escapeHtml(stock.stockName)}">刪除</button>
+          </div>
+        </td>`;
       tableBody.append(row);
     });
   }
 
   tableBody.addEventListener("click", async (event) => {
-    const button = event.target.closest(".delete-button");
+    const button = event.target.closest("button[data-action]");
     if (!button || !uid || !service) return;
+    const action = button.dataset.action;
+    const code = String(button.dataset.code || "").trim().toUpperCase();
+
+    if (action === "dividends") {
+      await showPage("dividend-page");
+      return;
+    }
+    if (action === "up") {
+      await moveStock(code, -1);
+      return;
+    }
+    if (action === "down") {
+      await moveStock(code, 1);
+      return;
+    }
+    if (action !== "delete") return;
+
     if (!window.confirm(`確定要刪除「${button.dataset.name}」嗎？股息子集合會保留以避免誤刪歷史紀錄。`)) return;
     button.disabled = true;
     try {
-      await service.deleteStock(uid, button.dataset.code);
+      await service.deleteStock(uid, code);
       await loadStocks();
-      setMessage(globalMessage, "股票刪除成功", "success", true);
+      setMessage(globalMessage, "股票刪除成功。", "success", true);
     } catch (error) {
-      console.error(error);
       setMessage(globalMessage, friendlyError(error, "刪除失敗，請稍後再試。"), "error");
       button.disabled = false;
     }
   });
 
+  async function moveStock(code, direction) {
+    if (reordering) return;
+    const ordered = [...savedStocks].sort((a, b) => a.sortOrder - b.sortOrder
+      || a.stockCode.localeCompare(b.stockCode, "zh-Hant", { numeric: true }));
+    const from = ordered.findIndex((stock) => stock.stockCode === code);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= ordered.length) return;
+
+    [ordered[from], ordered[to]] = [ordered[to], ordered[from]];
+    reordering = true;
+    renderStockList();
+    try {
+      await service.updateStockOrder(uid, ordered.map((stock) => stock.stockCode));
+      savedStocks = ordered.map((stock, index) => ({ ...stock, sortOrder: index + 1 }));
+      setMessage(globalMessage, "自訂順序已同步至 Firebase。", "success", true);
+    } catch (error) {
+      setMessage(globalMessage, friendlyError(error, "自訂順序儲存失敗。"), "error");
+      await loadStocks();
+    } finally {
+      reordering = false;
+      renderStockList();
+    }
+  }
+
   stockFilter.addEventListener("input", renderStockList);
-  document.querySelector("#reload-stocks").addEventListener("click", () => loadStocks(true, true));
+  document.querySelector("#reload-stocks").addEventListener("click", () => loadStocks(true));
   document.querySelector("#clear-stocks").addEventListener("click", async () => {
     if (!uid || !service) return;
     if (!savedStocks.length) {
-      setMessage(globalMessage, "目前沒有可清除的股票資料", "warning", true);
+      setMessage(globalMessage, "目前沒有可清除的股票資料。", "warning", true);
       return;
     }
     if (!window.confirm("確定要清除目前帳號的全部股票嗎？股息子集合會保留，但股票清單將從 Firebase 移除。")) return;
     try {
       await service.clearStocks(uid);
       await loadStocks();
-      setMessage(globalMessage, "已清除 Firebase 股票資料", "success", true);
+      setMessage(globalMessage, "已清除 Firebase 股票資料。", "success", true);
     } catch (error) {
-      console.error(error);
       setMessage(globalMessage, friendlyError(error, "清除失敗，請稍後再試。"), "error");
     }
   });
@@ -312,7 +307,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     return {
-      stocks: Array.from(map.values()).map((stock, index) => ({ ...stock, sortOrder: index + 1 })),
+      stocks: Array.from(map.values()).slice(0, MAX_STOCKS)
+        .map((stock, index) => ({ ...stock, sortOrder: index + 1 })),
       dividends: Array.from(dividendMap.values())
     };
   }
@@ -338,9 +334,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const stats = { success: 0, skipped: 0, failed: 0 };
     for (const stock of localStocksCache) {
       try {
-        if (await service.getStock(uid, stock.stockCode)) {
-          stats.skipped += 1;
-        } else {
+        if (await service.getStock(uid, stock.stockCode)) stats.skipped += 1;
+        else {
           await service.saveStock(uid, stock, { notify: false });
           stats.success += 1;
         }
@@ -441,12 +436,12 @@ document.addEventListener("DOMContentLoaded", () => {
     service = nextService || window.FirebaseService || null;
     uid = user?.uid || "";
     savedStocks = [];
-    marketData = new Map();
-    pendingStock = null;
     tableBody.replaceChildren();
     emptyState.hidden = false;
     localImportPanel.hidden = true;
+    stockForm.reset();
     setMessage(globalMessage, "");
+    setMessage(stockFormMessage, "");
     setMessage(cloudToolsMessage, "");
 
     if (!uid || !service) {
@@ -454,7 +449,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     await loadStocks();
-    await updateLocalImportOffer();
   }
 
   document.addEventListener("firebase:authchange", (event) => {
@@ -469,10 +463,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (window.FirebaseAuthState?.ready) {
     handleAuthChange(window.FirebaseAuthState.user, window.FirebaseService);
-  }
-
-  function formatNumber(value, suffix = "") {
-    return value === null || value === undefined || value === "" ? "—" : `${Number(value).toFixed(2)}${suffix}`;
   }
 
   function escapeHtml(value) {
