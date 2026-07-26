@@ -164,8 +164,9 @@ Repository 根目錄的 `firestore.rules` 是可直接發布的完整規則。�
 
 - IndexedDB `my-taiwan-stock-database / stocks`
 - localStorage `stock-trading-journal-watchlist-v1`
+- localStorage `stock-trading-journal-dividends-v1` 中的有效歷史股息
 
-若找到使用者自行加入的股票，會顯示「將目前股票匯入 Firebase」。確認後以股票代碼去重，顯示成功、略過及失敗筆數；原 IndexedDB 與 localStorage 不會刪除。空的 `sample-data.js` 不會被匯入。
+若找到使用者自行加入的股票，會顯示「將目前股票匯入 Firebase」。確認後以股票代碼、股息年度去重，顯示成功、略過及失敗筆數；原 IndexedDB 與 localStorage 不會刪除。空的 `sample-data.js` 不會被匯入。
 
 ### CSV 備份與還原
 
