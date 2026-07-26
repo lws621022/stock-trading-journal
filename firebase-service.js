@@ -40,7 +40,9 @@ export function validateStock(input) {
   }
   if (!stockName) throw createError("invalid-stock-name", "股票名稱不可空白。");
   if (stockName.length > 80) throw createError("invalid-stock-name", "股票名稱不可超過 80 個字元。");
-  if (!Number.isFinite(sortOrder) || sortOrder < 0 || sortOrder > 1000000) {\n    throw createError("invalid-sort-order", "股票排序值必須是 0～1000000 的數字。");\n  }
+  if (!Number.isFinite(sortOrder) || sortOrder < 0 || sortOrder > 1000000) {
+    throw createError("invalid-sort-order", "股票排序值必須是 0～1000000 的數字。");
+  }
 
   return { stockCode, stockName, sortOrder };
 }
