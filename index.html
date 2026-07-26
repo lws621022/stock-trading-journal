@@ -37,6 +37,11 @@
           <span class="feature-title">即時看盤</span>
           <span class="feature-description">建立自選股並查看即時行情</span>
         </button>
+        <button class="feature-card" type="button" data-page="dividend-page">
+          <span class="feature-icon" aria-hidden="true">息</span>
+          <span class="feature-title">股息紀錄</span>
+          <span class="feature-description">管理每支股票的年度與累積股息</span>
+        </button>
       </div>
     </section>
 
@@ -158,6 +163,96 @@
         </div>
       </div>
     </section>
+
+    <section id="dividend-page" class="page" aria-labelledby="dividend-heading" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">本機股息管理</p>
+          <h2 id="dividend-heading">股息紀錄</h2>
+        </div>
+        <button class="button secondary" type="button" data-page="home-page">返回首頁</button>
+      </div>
+
+      <div class="panel dividend-panel">
+        <div class="dividend-toolbar">
+          <div class="dividend-filter">
+            <label for="dividend-sort">排序方式</label>
+            <select id="dividend-sort">
+              <option value="code-asc">股票代碼，由小到大</option>
+              <option value="code-desc">股票代碼，由大到小</option>
+              <option value="name">股票名稱排序</option>
+              <option value="year-desc">指定年度股息，由高到低</option>
+              <option value="year-asc">指定年度股息，由低到高</option>
+              <option value="total-desc">累積股息，由高到低</option>
+              <option value="total-asc">累積股息，由低到高</option>
+              <option value="manual">自訂排序</option>
+            </select>
+          </div>
+          <div class="dividend-filter">
+            <label for="dividend-year-filter">指定年度</label>
+            <select id="dividend-year-filter" disabled></select>
+          </div>
+        </div>
+        <p class="field-help">股票直接取自既有個股資料與即時看盤自選股；刪除股票不會刪除已保存的股息歷史。</p>
+        <div id="dividend-message" class="message" role="status" aria-live="polite" hidden></div>
+
+        <div class="table-wrapper dividend-table-wrapper">
+          <table class="dividend-table">
+            <thead>
+              <tr>
+                <th scope="col">股票代碼</th><th scope="col">股票名稱</th>
+                <th scope="col">最近年度股息</th><th id="dividend-year-heading" scope="col">指定年度股息</th>
+                <th scope="col">累積股息</th><th scope="col">紀錄筆數</th><th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody id="dividend-table-body"></tbody>
+          </table>
+          <p id="dividend-empty" class="empty-state">目前沒有已加入的股票</p>
+        </div>
+      </div>
+    </section>
+
+    <dialog id="dividend-dialog" class="dividend-dialog" aria-labelledby="dividend-dialog-title">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">年度股息明細</p>
+          <h2 id="dividend-dialog-title">股息紀錄</h2>
+        </div>
+        <button id="dividend-dialog-close" class="dialog-close" type="button" aria-label="關閉股息紀錄">×</button>
+      </div>
+
+      <form id="dividend-form" class="dividend-form" novalidate>
+        <div>
+          <label for="dividend-year">年度</label>
+          <input id="dividend-year" name="year" type="number" inputmode="numeric" step="1" required placeholder="例如：2025">
+        </div>
+        <div>
+          <label for="dividend-amount">每股股息金額</label>
+          <input id="dividend-amount" name="amount" type="number" inputmode="decimal" min="0" step="0.01" required placeholder="例如：3.5">
+        </div>
+        <div class="dividend-note-field">
+          <label for="dividend-note">備註（選填）</label>
+          <input id="dividend-note" name="note" type="text" maxlength="100" placeholder="例如：現金股利">
+        </div>
+        <div class="dividend-form-actions">
+          <button id="dividend-submit" class="button primary" type="submit">新增紀錄</button>
+          <button id="dividend-cancel-edit" class="button secondary" type="button" hidden>取消編輯</button>
+        </div>
+      </form>
+      <div id="dividend-dialog-message" class="message" role="status" aria-live="polite" hidden></div>
+
+      <div class="dividend-records-heading">
+        <h3>歷年紀錄</h3>
+        <strong id="dividend-dialog-total">累積股息：0 元</strong>
+      </div>
+      <div class="table-wrapper dividend-records-wrapper">
+        <table class="dividend-records-table">
+          <thead><tr><th scope="col">年度</th><th scope="col">每股股息</th><th scope="col">備註</th><th scope="col">操作</th></tr></thead>
+          <tbody id="dividend-records-body"></tbody>
+        </table>
+        <p id="dividend-records-empty" class="empty-state">尚無股息紀錄</p>
+      </div>
+    </dialog>
   </main>
 
   <footer><div class="container">個股資料使用官方盤後資訊 · 即時看盤使用證交所基本市況資訊 · EPS 來自公開財報資料</div></footer>
@@ -165,6 +260,7 @@
   <script src="db.js" defer></script>
   <script src="stock-api.js" defer></script>
   <script src="watchlist.js" defer></script>
+  <script src="dividends.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

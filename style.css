@@ -20,7 +20,7 @@ main { min-height: calc(100vh - 274px); padding: 42px 0 64px; }
 .page:not(.active) { display: none; }
 @keyframes page-in { from { opacity: 0; transform: translateY(5px); } }
 .section-title { margin: 0 0 22px; font-size: 1.35rem; }
-.feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; }
 .feature-card { display: flex; min-height: 235px; padding: 32px; align-items: flex-start; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); text-align: left; background: var(--surface); box-shadow: var(--shadow); transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease; }
 .feature-card:hover { transform: translateY(-3px); border-color: #7ca8ff; box-shadow: 0 18px 42px rgba(16,42,67,.14); }
 .feature-card:focus-visible, .button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid rgba(36,107,253,.3); outline-offset: 3px; }
@@ -143,3 +143,62 @@ footer { padding: 24px 0; border-top: 1px solid var(--border); color: var(--mute
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 
+/* 股息紀錄：延續既有表格、卡片與按鈕風格。 */
+.dividend-panel { overflow: visible; }
+.dividend-toolbar { display: flex; margin-bottom: 12px; align-items: end; gap: 16px; flex-wrap: wrap; }
+.dividend-filter { width: min(320px, 100%); }
+.dividend-filter label { margin-bottom: 6px; }
+.dividend-filter select { width: 100%; }
+.dividend-table { min-width: 900px; table-layout: auto; }
+.dividend-table th, .dividend-table td { padding: 11px 10px; vertical-align: middle; }
+.dividend-table th:nth-child(1) { width: 90px; }
+.dividend-table th:nth-child(2) { width: 130px; }
+.dividend-table th:nth-child(3), .dividend-table th:nth-child(4) { width: 160px; }
+.dividend-table th:nth-child(5), .dividend-table th:nth-child(6) { width: 105px; }
+.dividend-table th:last-child { width: 205px; }
+.dividend-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
+.compact-btn, .icon-btn { min-height: 36px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: white; color: var(--navy); font: inherit; font-size: .86rem; font-weight: 750; cursor: pointer; }
+.secondary-btn:hover, .icon-btn:hover { border-color: #9fb3c8; background: #f2f6fa; }
+.danger-btn { border-color: #f2a5b2; color: #b82941; }
+.danger-btn:hover { background: #fff1f3; }
+.icon-btn { min-width: 38px; padding-inline: 8px; font-size: 1rem; }
+.icon-btn:disabled { cursor: not-allowed; opacity: .4; }
+.muted { color: var(--muted); }
+
+.dividend-dialog { width: min(920px, calc(100% - 32px)); max-height: calc(100vh - 32px); padding: 26px; border: 0; border-radius: 18px; color: var(--text); background: white; box-shadow: 0 24px 80px rgba(16, 42, 67, .24); }
+.dividend-dialog::backdrop { background: rgba(16, 42, 67, .55); backdrop-filter: blur(2px); }
+.dialog-header { display: flex; margin-bottom: 22px; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.dialog-header h2 { margin-bottom: 0; }
+.dialog-close { min-width: 44px; min-height: 44px; padding: 0; border: 1px solid var(--border); border-radius: 50%; color: var(--navy); background: white; font-size: 1.6rem; line-height: 1; cursor: pointer; }
+.dialog-close:hover { background: #f2f6fa; }
+.dividend-form { display: grid; grid-template-columns: minmax(130px, .7fr) minmax(170px, 1fr) minmax(220px, 1.5fr); align-items: end; gap: 14px; }
+.dividend-form label { margin-bottom: 6px; }
+.dividend-note-field { min-width: 0; }
+.dividend-form-actions { display: flex; grid-column: 1 / -1; gap: 10px; flex-wrap: wrap; }
+.dividend-dialog .message { margin: 16px 0 0; }
+.dividend-records-heading { display: flex; margin: 26px 0 12px; align-items: baseline; justify-content: space-between; gap: 16px; }
+.dividend-records-heading h3 { margin: 0; }
+.dividend-records-table { min-width: 620px; }
+.dividend-records-table th, .dividend-records-table td { padding: 10px; vertical-align: middle; }
+.dividend-records-table th:nth-child(1) { width: 100px; }
+.dividend-records-table th:nth-child(2) { width: 130px; }
+.dividend-records-table th:last-child { width: 150px; }
+
+@media (max-width: 720px) {
+  .dividend-toolbar { align-items: stretch; flex-direction: column; }
+  .dividend-filter { width: 100%; }
+  .dividend-table-wrapper, .dividend-records-wrapper { overflow: visible; }
+  .dividend-table, .dividend-records-table { display: block; min-width: 0; }
+  .dividend-table thead, .dividend-records-table thead { display: none; }
+  .dividend-table tbody, .dividend-records-table tbody { display: grid; gap: 14px; }
+  .dividend-table tr, .dividend-records-table tr { display: grid; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: #fff; box-shadow: 0 7px 20px rgba(16, 42, 67, .07); }
+  .dividend-table td, .dividend-records-table td { display: flex; min-height: 40px; padding: 7px 2px; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid #edf1f5; white-space: normal; text-align: right; }
+  .dividend-table td::before, .dividend-records-table td::before { content: attr(data-label); flex: 0 0 auto; color: var(--muted); font-size: .82rem; font-weight: 750; text-align: left; }
+  .dividend-table td:last-child, .dividend-records-table td:last-child { padding-top: 12px; border-bottom: 0; }
+  .dividend-actions { justify-content: flex-end; }
+  .dividend-dialog { width: calc(100% - 20px); max-height: calc(100vh - 20px); padding: 20px 14px; }
+  .dividend-form { grid-template-columns: 1fr; }
+  .dividend-form-actions { grid-column: auto; flex-direction: column; }
+  .dividend-form-actions .button { width: 100%; }
+  .dividend-records-heading { align-items: flex-start; flex-direction: column; gap: 6px; }
+}
