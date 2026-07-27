@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   "use strict";
 
-  const MAX_STOCKS = 50;
+  const MAX_STOCKS = 100;
   const pages = [...document.querySelectorAll(".page")];
   const globalMessage = document.querySelector("#global-message");
   const stockForm = document.querySelector("#stock-form");
